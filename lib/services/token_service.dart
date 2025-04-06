@@ -1,4 +1,4 @@
-PS choco install dart-sdkimport 'package:shared_preferences.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class TokenService {
   static final TokenService _instance = TokenService._internal();

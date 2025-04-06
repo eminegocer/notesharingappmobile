@@ -1,20 +1,39 @@
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
+import '../models/note.dart';
 
 class ApiService {
-  final String baseUrl = 'http://localhost:5000/api';
-  
+  final client = http.Client();
+
   // ASP.NET Core API için header'ları hazırlama
   Map<String, String> _getHeaders(String? token) {
-    return token != null ? ApiConfig.getHeaders(token) : {
+    final headers = {
       'Content-Type': 'application/json',
+      'Accept': '*/*',
     };
+
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+
+    return headers;
   }
 
   // Multipart request için header'ları hazırlama
   Map<String, String> _getMultipartHeaders(String token) {
-    return ApiConfig.getMultipartHeaders(token);
+    final headers = {
+      'Content-Type': 'multipart/form-data',
+      'Accept': '*/*',
+    };
+
+    if (token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+
+    return headers;
   }
 
   // Hata işleme yardımcı metodu
@@ -37,19 +56,59 @@ class ApiService {
   }
 
   // Login işlemi
-  Future<Map<String, dynamic>> login(String email, String password) async {
+  Future<Map<String, dynamic>> login(String userName, String email, String password) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl${ApiConfig.login}'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.login}'),
         headers: _getHeaders(null),
         body: jsonEncode({
-          'email': email,
-          'password': password,
+          'UserName': userName,
+          'Email': email,
+          'Password': password
         }),
       );
-      return _handleResponse(response);
+
+      print('Response status: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      // HTML veya boş yanıt kontrolü
+      if (response.body.trim().toLowerCase().startsWith('<!doctype html') ||
+          response.body.trim().toLowerCase().startsWith('<html') ||
+          response.body.isEmpty) {
+        return {
+          'success': false,
+          'message': 'Sunucudan beklenmeyen yanıt alındı. Lütfen API URLsini kontrol edin.'
+        };
+      }
+
+      try {
+        final responseData = jsonDecode(response.body);
+
+        if (response.statusCode == 200) {
+          return {
+            'success': true,
+            'message': responseData['message'] ?? 'Giriş başarılı',
+            'userId': responseData['userId'],
+            'userName': responseData['userName'],
+            'token': responseData['token'] ?? responseData['accessToken'] ?? ''
+          };
+        } else {
+          return {
+            'success': false,
+            'message': responseData['message'] ?? 'Giriş başarısız'
+          };
+        }
+      } on FormatException {
+        return {
+          'success': false,
+          'message': 'Sunucudan geçersiz veri alındı. JSON formatı hatalı olabilir.'
+        };
+      }
     } catch (e) {
-      throw Exception('${ApiConfig.networkError}: $e');
+      return {
+        'success': false,
+        'message': 'Bağlantı hatası: Lütfen internet bağlantınızı veya API adresini kontrol edin.'
+      };
     }
   }
 
@@ -57,7 +116,7 @@ class ApiService {
   Future<Map<String, dynamic>> register(String email, String password, String username) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl${ApiConfig.register}'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.register}'),
         headers: _getHeaders(null),
         body: jsonEncode({
           'email': email,
@@ -75,7 +134,7 @@ class ApiService {
   Future<void> logout(String token) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl${ApiConfig.logout}'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.logout}'),
         headers: _getHeaders(token),
       );
       _handleResponse(response);
@@ -88,7 +147,7 @@ class ApiService {
   Future<Map<String, dynamic>> getCurrentUser(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl${ApiConfig.getCurrentUser}'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.getCurrentUser}'),
         headers: _getHeaders(token),
       );
       return _handleResponse(response);
@@ -101,7 +160,7 @@ class ApiService {
   Future<bool> checkAuth(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl${ApiConfig.checkAuth}'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.checkAuth}'),
         headers: _getHeaders(token),
       );
       final result = _handleResponse(response);
@@ -112,15 +171,25 @@ class ApiService {
   }
 
   // Tüm notları getirme
-  Future<List<dynamic>> getNotes(String token) async {
+  Future<List<Note>> getNotes(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl${ApiConfig.notes}'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.notes}'),
         headers: _getHeaders(token),
       );
-      return _handleResponse(response);
+
+      if (response.statusCode == 200) {
+        // JSON array'i parse et
+        List<dynamic> jsonList = jsonDecode(response.body);
+        // Her bir JSON objesini Note nesnesine dönüştür
+        return jsonList.map((json) => Note.fromJson(json as Map<String, dynamic>)).toList();
+      } else if (response.statusCode == 401) {
+        throw Exception('Oturum süresi dolmuş veya geçersiz. Lütfen tekrar giriş yapın.');
+      } else {
+        throw Exception('Notlar yüklenirken bir hata oluştu. Durum kodu: ${response.statusCode}');
+      }
     } catch (e) {
-      throw Exception('${ApiConfig.networkError}: $e');
+      throw Exception('Bağlantı hatası: $e');
     }
   }
 
@@ -128,7 +197,7 @@ class ApiService {
   Future<List<dynamic>> getMyNotes(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl${ApiConfig.myNotes}'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.myNotes}'),
         headers: _getHeaders(token),
       );
       return _handleResponse(response);
@@ -141,7 +210,7 @@ class ApiService {
   Future<List<dynamic>> getNoteCategories(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl${ApiConfig.categories}'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.categories}'),
         headers: _getHeaders(token),
       );
       return _handleResponse(response);
@@ -154,7 +223,7 @@ class ApiService {
   Future<Map<String, dynamic>> getNoteById(String token, String noteId) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl${ApiConfig.getNoteById}$noteId'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.getNoteById}$noteId'),
         headers: _getHeaders(token),
       );
       return _handleResponse(response);
@@ -167,7 +236,7 @@ class ApiService {
   Future<Map<String, dynamic>> createNote(String token, Map<String, dynamic> noteData) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl${ApiConfig.addNote}'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.addNote}'),
         headers: _getHeaders(token),
         body: jsonEncode(noteData),
       );
@@ -181,7 +250,7 @@ class ApiService {
   Future<void> deleteNote(String token, String noteId) async {
     try {
       final response = await http.delete(
-        Uri.parse('$baseUrl${ApiConfig.deleteNote}$noteId'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.deleteNote}$noteId'),
         headers: _getHeaders(token),
       );
       _handleResponse(response);
@@ -194,7 +263,7 @@ class ApiService {
   Future<Map<String, dynamic>> startChat(String token, String targetUsername) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl${ApiConfig.startChat}'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.startChat}'),
         headers: _getHeaders(token),
         body: jsonEncode({
           'targetUsername': targetUsername,
@@ -210,7 +279,7 @@ class ApiService {
   Future<List<dynamic>> searchUsers(String token, String searchTerm) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl${ApiConfig.searchUsers}?term=$searchTerm'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.searchUsers}?term=$searchTerm'),
         headers: _getHeaders(token),
       );
       return _handleResponse(response);
@@ -223,7 +292,7 @@ class ApiService {
   Future<List<dynamic>> getChatHistory(String token, String username) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl${ApiConfig.chatHistory}$username'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.chatHistory}$username'),
         headers: _getHeaders(token),
       );
       return _handleResponse(response);
@@ -236,7 +305,7 @@ class ApiService {
   Future<List<dynamic>> getChatUsers(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl${ApiConfig.chatUsers}'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.chatUsers}'),
         headers: _getHeaders(token),
       );
       return _handleResponse(response);
@@ -249,7 +318,7 @@ class ApiService {
   Future<Map<String, dynamic>> joinGroup(String token, String groupId) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl${ApiConfig.joinGroup}'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.joinGroup}'),
         headers: _getHeaders(token),
         body: jsonEncode({
           'groupId': groupId,
@@ -265,7 +334,7 @@ class ApiService {
   Future<List<dynamic>> searchGroups(String token, String searchTerm) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl${ApiConfig.searchGroups}?term=$searchTerm'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.searchGroups}?term=$searchTerm'),
         headers: _getHeaders(token),
       );
       return _handleResponse(response);
@@ -278,7 +347,7 @@ class ApiService {
   Future<List<dynamic>> getSchoolGroups(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl${ApiConfig.schoolGroups}'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.schoolGroups}'),
         headers: _getHeaders(token),
       );
       return _handleResponse(response);
@@ -290,7 +359,7 @@ class ApiService {
   // Chat dosyası yükleme
   Future<Map<String, dynamic>> uploadChatFile(String token, List<int> fileBytes, String fileName) async {
     try {
-      var uri = Uri.parse('$baseUrl${ApiConfig.uploadChatFile}');
+      var uri = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.uploadChatFile}');
       var request = http.MultipartRequest('POST', uri);
       
       request.headers.addAll(_getMultipartHeaders(token));
