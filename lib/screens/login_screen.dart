@@ -23,6 +23,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
   final _tokenService = TokenService();
+  final _apiService = ApiService();
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -61,77 +63,60 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   }
 
   Future<void> _handleLogin() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isLoading = true;
-      });
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
 
-      try {
-        final apiService = ApiService();
-        final response = await apiService.login(
-          _usernameController.text,
-          _emailController.text,
-          _passwordController.text,
-        );
+    try {
+      print('Login işlemi başlatılıyor...');
+      print('Kullanıcı adı: ${_usernameController.text}, Email: ${_emailController.text}');
 
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
+      final response = await _apiService.login(
+        _usernameController.text,
+        _emailController.text,
+        _passwordController.text,
+      );
 
-          if (response['success'] == true) {
-            // Token'ı kaydet
-            await _tokenService.saveToken(response['token'] ?? '');
-            await _tokenService.saveUserId(response['userId'].toString());
+      print('Login yanıtı alındı: $response');
 
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(response['message'] ?? 'Giriş başarılı'),
-                backgroundColor: Colors.green,
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            );
-
-            if (mounted) {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (context) => const HomeScreen(),
-                ),
-              );
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(response['message'] ?? 'Giriş başarısız'),
-                backgroundColor: Colors.red,
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            );
-          }
+      if (response['success'] == true) {
+        // Kullanıcı ID ve token bilgilerini kaydet
+        if (response['userId'] != null) {
+          await _tokenService.saveUserId(response['userId']['timestamp'].toString());
         }
-      } catch (e) {
+
+        if (response['token'] != null) {
+          await _tokenService.saveToken(response['token']);
+        }
+
+        // Başarılı giriş sonrası home sayfasına yönlendir
         if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-          
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Beklenmeyen bir hata oluştu: $e'),
-              backgroundColor: Colors.red,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
+            const SnackBar(content: Text('Giriş başarılı!')),
+          );
+          
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            (route) => false,
           );
         }
+      } else {
+        setState(() {
+          _errorMessage = response['message'] ?? 'Giriş yapılamadı';
+        });
+      }
+    } catch (e) {
+      print('Login hatası: $e');
+      setState(() {
+        _errorMessage = 'Giriş yaparken hata oluştu: $e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }
@@ -440,6 +425,18 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       ),
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  
+                  // Hata mesajı gösterimi
+                  if (_errorMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Text(
+                        _errorMessage!,
+                        style: TextStyle(color: Colors.red[700], fontSize: 14),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                 ],
               ),
             ),
