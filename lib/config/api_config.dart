@@ -6,7 +6,7 @@ class ApiConfig {
   // static const String baseUrl = 'http://YOUR_LOCAL_IP:5000';
   
   // Authentication endpoints - RESTful API için
-  static const String login = '/api/auth/login';
+  static const String login = '/api/home/login';
   static const String register = '/api/auth/register';
   static const String logout = '/api/auth/logout';
   static const String getCurrentUser = '/api/auth/user';
@@ -16,7 +16,7 @@ class ApiConfig {
   static const String notes = '/api/notes';
   static const String myNotes = '/api/notes/my';
   static const String categories = '/api/notes/categories';
-  static const String addNote = '/api/notes/AddNote';  // Backend'deki metot adıyla eşleştirildi
+  static const String addNote = '/api/notes';  // Endpoint '/api/notes' olarak güncellendi
   static const String getNoteById = '/api/notes/';  // Kullanım: getNoteById + noteId
   static const String deleteNote = '/api/notes/';    // Kullanım: deleteNote + noteId
   

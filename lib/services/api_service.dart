@@ -59,100 +59,106 @@ class ApiService {
   // Tüm notları getirme
   Future<List<Note>> getNotes(String token) async {
     try {
-      print('Notlar yükleniyor...');
-      print('Token: $token');
-      
-      // Doğrudan örnek notlar döndürüyoruz - API'yi bypass ederek
-      var notList = <Note>[];
-      
-      // Test verileri oluştur
-      notList.add(
-        Note(
-          noteId: {'timestamp': 1741012345},
-          title: 'Matematik Notları',
-          content: 'Bu örnek bir matematik notudur. Diferansiyel denklemler, integral hesabı ve vektör cebiri gibi konuları içerir.',
-          category: 'Matematik',
-          page: 5,
-          ownerId: {'timestamp': 1740123456},
-          ownerUsername: 'Emine Göçer',
-          createdAt: DateTime.now().subtract(const Duration(days: 2)),
-          pdfFilePath: '/uploads/sample1.pdf',
-        )
+      print("Notlar API'den yukleniyor: ${ApiConfig.baseUrl}${ApiConfig.notes}");
+      print('Kullanılan Token: $token');
+
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.notes}'),
+        headers: _getHeaders(token), // Notları getirmek için token gerekli
       );
-      
-      notList.add(
-        Note(
-          noteId: {'timestamp': 1741023456},
-          title: 'Fizik Notları',
-          content: 'Mekanik, termodinamik, elektromanyetizma ve kuantum fiziği ile ilgili detaylı ders notları.',
-          category: 'Fizik',
-          page: 8,
-          ownerId: {'timestamp': 1740123456},
-          ownerUsername: 'Emine Göçer',
-          createdAt: DateTime.now().subtract(const Duration(days: 5)),
-          pdfFilePath: '/uploads/sample2.pdf',
-        )
-      );
-      
-      notList.add(
-        Note(
-          noteId: {'timestamp': 1741034567},
-          title: 'Kimya Notları',
-          content: 'Organik kimya, inorganik kimya ve analitik kimya derslerinden derlenen notlar.',
-          category: 'Kimya',
-          page: 6,
-          ownerId: {'timestamp': 1740123456},
-          ownerUsername: 'Emine Göçer',
-          createdAt: DateTime.now().subtract(const Duration(days: 7)),
-          pdfFilePath: '/uploads/sample3.pdf',
-        )
-      );
-      
-      notList.add(
-        Note(
-          noteId: {'timestamp': 1741045678},
-          title: 'Biyoloji Notları',
-          content: 'Hücre biyolojisi, genetik, evrim ve ekoloji konularını kapsayan ders notları.',
-          category: 'Biyoloji',
-          page: 4,
-          ownerId: {'timestamp': 1740123456},
-          ownerUsername: 'Emine Göçer',
-          createdAt: DateTime.now().subtract(const Duration(days: 10)),
-          pdfFilePath: '/uploads/sample4.pdf',
-        )
-      );
-      
-      // 1 saniye gecikme ekle - gerçek bir API çağrısı gibi hissettirmek için
-      await Future.delayed(const Duration(seconds: 1));
-      
-      return notList;
+
+      print('Notlar yanıtı alındı. Status: ${response.statusCode}');
+
+      if (response.statusCode == ApiConfig.statusOk) {
+        // Yanıt gövdesini decode et (bir liste bekleniyor)
+        final List<dynamic> jsonData = jsonDecode(response.body);
+        print('Alınan not sayısı: ${jsonData.length}');
+
+        // JSON listesini List<Note> listesine dönüştür
+        List<Note> notes = jsonData.map((noteJson) {
+          try {
+            return Note.fromJson(noteJson as Map<String, dynamic>);
+          } catch (e) {
+            print('Not parse edilirken hata: $noteJson, Hata: $e');
+            // Hatalı veriyi atlamak için null döndür ve sonra filtrele
+            return null;
+          }
+        }).where((note) => note != null) // null olanları filtrele
+          .cast<Note>() // Tipi List<Note> olarak belirle
+          .toList();
+
+        return notes;
+      } else {
+        // Hata durumunu işle
+        print('Notlar yüklenemedi. Status: ${response.statusCode}, Body: ${response.body}');
+        throw Exception('Notlar yüklenirken hata oluştu. Status: ${response.statusCode}');
+      }
+
     } catch (e) {
-      print('Notlar yüklenirken hata: $e');
-      return [];
+      print('Notlar yüklenirken bir hata oluştu: $e');
+      // Hata durumunda boş liste döndür veya hatayı yeniden fırlat
+      // throw Exception('${ApiConfig.networkError}: $e'); 
+      return []; // Şimdilik boş liste döndürelim
     }
   }
 
-  // Login işlemi (basitleştirilmiş, doğrudan başarılı yanıt döndürür)
+  // Login işlemi
   Future<Map<String, dynamic>> login(String userName, String email, String password) async {
     try {
-      print('Login isteği gönderiliyor...');
+      print('Login isteği gönderiliyor: ${ApiConfig.baseUrl}${ApiConfig.login}');
       print('Username: $userName, Email: $email');
-      
-      // API'yi bypass et ve doğrudan başarılı yanıt döndür
-      await Future.delayed(const Duration(seconds: 1)); // Gerçek bir API isteği hissi ver
-      
-      return {
-        'success': true,
-        'message': 'Giriş başarılı',
-        'userId': {'timestamp': DateTime.now().millisecondsSinceEpoch ~/ 1000},
-        'userName': userName,
-        'token': 'manual_token_${userName}_${DateTime.now().millisecondsSinceEpoch}'
-      };
+
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.login}'),
+        headers: _getHeaders(null), // No token needed for login
+        body: jsonEncode({
+          // Backend'in User modeline göre alan adları eşleşmeli
+          // HomeApiController'daki Login metodu [FromBody] User user alıyor.
+          // User modelinde hangi alanlar var? Genellikle UserName veya Email ve Password olur.
+          // Backend kodu hem UserName hem Password kontrolü yapıyor gibi.
+          // E-posta da gönderelim, belki ileride kullanılır.
+          'UserName': userName, // Backend User modelindeki özellikle eşleştiğini varsayalım
+          'Email': email,       // Backend User modelindeki özellikle eşleştiğini varsayalım
+          'Password': password  // Backend User modelindeki özellikle eşleştiğini varsayalım
+        }),
+      );
+
+      print('Login yanıtı alındı. Status: ${response.statusCode}, Body: ${response.body}');
+
+      // Doğrudan başarılı yanıt döndürmek yerine, gerçek yanıtı işle
+      if (response.statusCode == ApiConfig.statusOk) {
+        final responseBody = jsonDecode(response.body);
+        // Backend'den gelen yanıtı doğrudan döndür (veya gerekli alanları seçerek)
+        // Backend yanıtı: { message, userId, userName, token }
+        return {
+          'success': true, // Başarıyı status code'dan anlıyoruz
+          'message': responseBody['message'] ?? 'Giriş başarılı',
+          'userId': responseBody['userId'], // Backend'den gelen ID'yi al
+          'userName': responseBody['userName'], // Backend'den gelen kullanıcı adını al
+          'token': responseBody['token'] // Backend'den gelen GERÇEK token'ı al
+        };
+      } else {
+        // Hata durumunu işle
+        String errorMessage = 'Giriş yapılamadı. Status: ${response.statusCode}';
+        try {
+          // Hata mesajını yanıttan almaya çalış
+          final errorBody = jsonDecode(response.body);
+          errorMessage = errorBody['message'] ?? errorMessage;
+        } catch (e) {
+          // JSON parse edilemezse veya mesaj yoksa, varsayılan mesajı kullan
+          print('Login yanıtı parse edilemedi veya mesaj yok: ${response.body}');
+        }
+         return {
+          'success': false,
+          'message': errorMessage
+        };
+      }
+
     } catch (e) {
       print('Login hatası: $e');
       return {
         'success': false,
-        'message': 'Bağlantı hatası: $e'
+        'message': '${ApiConfig.networkError}: $e' // Daha açıklayıcı hata
       };
     }
   }
