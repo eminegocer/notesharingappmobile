@@ -19,6 +19,7 @@ class ApiConfig {
   static const String addNote = '/api/notes';  // Endpoint '/api/notes' olarak güncellendi
   static const String getNoteById = '/api/notes/';  // Kullanım: getNoteById + noteId
   static const String deleteNote = '/api/notes/';    // Kullanım: deleteNote + noteId
+  static const String searchNotes = '/api/notes/search'; // Not arama endpoint'i
   
   // Chat endpoints
   static const String startChat = '/api/chat/start';

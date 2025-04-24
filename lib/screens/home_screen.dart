@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import '../services/token_service.dart';
 import './chat_screen.dart';
 import './add_note_screen.dart';
+import './note_search_delegate.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,8 +15,10 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final List<Note> _notes = [];
+  List<Note> _notes = [];
   bool _isLoading = false;
+  String? _errorMessage;
+  String? _currentSearchTerm;
   final _refreshKey = GlobalKey<RefreshIndicatorState>();
   final _apiService = ApiService();
   final _tokenService = TokenService();
@@ -26,13 +29,17 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadNotes();
   }
 
-  Future<void> _loadNotes() async {
-    if (mounted) {
-      setState(() {
-        _isLoading = true;
-        _notes.clear(); // Clear existing notes before loading new ones
-      });
-    }
+  Future<void> _loadNotes({String? searchTerm}) async {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _currentSearchTerm = searchTerm;
+      if (searchTerm != null || _notes.isEmpty) {
+        _notes.clear();
+      }
+    });
 
     try {
       final token = await _tokenService.getToken();
@@ -40,17 +47,29 @@ class _HomeScreenState extends State<HomeScreen> {
         throw Exception('Oturum bilgisi bulunamadı. Lütfen tekrar giriş yapın.');
       }
 
-      final notes = await _apiService.getNotes(token);
+      List<Note> fetchedNotes;
+      if (searchTerm != null && searchTerm.isNotEmpty) {
+        print('Aranıyor: "$searchTerm"');
+        fetchedNotes = await _apiService.searchNotes(token, searchTerm);
+      } else {
+        print('Tüm notlar yükleniyor');
+        fetchedNotes = await _apiService.getNotes(token);
+      }
+
       if (mounted) {
         setState(() {
-          _notes.addAll(notes);
+          _notes = fetchedNotes;
         });
       }
     } catch (e) {
       if (mounted) {
+        setState(() {
+          _errorMessage = 'Notlar yüklenirken hata oluştu: $e';
+          _notes = [];
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Notlar yüklenirken hata oluştu: $e'),
+            content: Text(_errorMessage!),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
           ),
@@ -65,119 +84,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _handleRefresh() async {
+    await _loadNotes();
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Boş liste kontrolü
-    if (_notes.isEmpty) {
-      return Scaffold(
-        backgroundColor: Colors.grey[100],
-        appBar: AppBar(
-          elevation: 0,
-          backgroundColor: Colors.white,
-          title: Text(
-            'NOTLARIM',
-            style: GoogleFonts.poppins(
-              color: const Color(0xFF6B7FD7),
-              fontWeight: FontWeight.bold,
-              fontSize: 24,
-            ),
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.search_rounded, color: Color(0xFF6B7FD7)),
-              onPressed: () {
-                // TODO: Implement search
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.notifications_outlined, color: Color(0xFF6B7FD7)),
-              onPressed: () {
-                // TODO: Implement notifications
-              },
-            ),
-          ],
-        ),
-        body: _isLoading
-            ? const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6B7FD7)),
-                ),
-              )
-            : Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.note_alt_outlined,
-                      size: 80,
-                      color: Colors.grey[400],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Henüz not eklenmemiş',
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Yeni bir not eklemek için + butonuna basın',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[500],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () async {
-            final result = await Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const AddNoteScreen()),
-            );
-            
-            if (result == true) {
-              _loadNotes(); // Yeni not eklendiğinde listeyi yenile
-            }
-          },
-          backgroundColor: const Color(0xFF6B7FD7),
-          child: const Icon(Icons.add_rounded),
-        ),
-        bottomNavigationBar: BottomNavigationBar(
-          currentIndex: 0,
-          selectedItemColor: const Color(0xFF6B7FD7),
-          unselectedItemColor: Colors.grey,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home_rounded),
-              label: 'Ana Sayfa',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.chat_bubble_outline_rounded),
-              label: 'Sohbet',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline_rounded),
-              label: 'Profil',
-            ),
-          ],
-          onTap: (index) {
-            if (index == 1) { // Chat icon
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const ChatScreen()),
-              );
-            }
-            // TODO: Implement other navigation options
-          },
-        ),
-      );
-    }
-    
-    // Normal görünüm
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
@@ -194,8 +106,18 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.search_rounded, color: Color(0xFF6B7FD7)),
-            onPressed: () {
-              // TODO: Implement search
+            tooltip: 'Not Ara',
+            onPressed: () async {
+              final String? selectedTerm = await showSearch<String?>(
+                context: context,
+                delegate: NoteSearchDelegate(apiService: _apiService, tokenService: _tokenService),
+                query: _currentSearchTerm,
+              );
+
+              final termToLoad = selectedTerm?.trim().isEmpty ?? true ? null : selectedTerm;
+              if (termToLoad != _currentSearchTerm) {
+                _loadNotes(searchTerm: termToLoad);
+              }
             },
           ),
           IconButton(
@@ -208,25 +130,9 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: RefreshIndicator(
         key: _refreshKey,
-        onRefresh: _loadNotes,
+        onRefresh: _handleRefresh,
         color: const Color(0xFF6B7FD7),
-        child: _isLoading
-            ? const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6B7FD7)),
-                ),
-              )
-            : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _notes.length,
-                itemBuilder: (context, index) {
-                  final note = _notes[index];
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: NoteCard(note: note),
-                  );
-                },
-              ),
+        child: _buildBody(),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
@@ -234,9 +140,9 @@ class _HomeScreenState extends State<HomeScreen> {
             context,
             MaterialPageRoute(builder: (context) => const AddNoteScreen()),
           );
-          
+
           if (result == true) {
-            _loadNotes(); // Yeni not eklendiğinde listeyi yenile
+            _loadNotes();
           }
         },
         backgroundColor: const Color(0xFF6B7FD7),
@@ -261,15 +167,110 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
         onTap: (index) {
-          if (index == 1) { // Chat icon
+          if (index == 1) {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => const ChatScreen()),
             );
           }
-          // TODO: Implement other navigation options
         },
       ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6B7FD7)),
+        ),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, color: Colors.red, size: 60),
+              SizedBox(height: 16),
+              Text('Hata Oluştu', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              SizedBox(height: 8),
+              Text(_errorMessage!, textAlign: TextAlign.center),
+              SizedBox(height: 16),
+              ElevatedButton.icon(
+                icon: Icon(Icons.refresh),
+                label: Text('Tekrar Dene'),
+                onPressed: () => _loadNotes(searchTerm: _currentSearchTerm),
+                style: ElevatedButton.styleFrom(backgroundColor: Color(0xFF6B7FD7), foregroundColor: Colors.white),
+              )
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_notes.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              _currentSearchTerm != null && _currentSearchTerm!.isNotEmpty
+                ? Icons.search_off_rounded
+                : Icons.note_alt_outlined,
+              size: 80,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _currentSearchTerm != null && _currentSearchTerm!.isNotEmpty
+                ? 'Arama Sonucu Bulunamadı'
+                : 'Henüz Not Eklenmemiş',
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _currentSearchTerm != null && _currentSearchTerm!.isNotEmpty
+                ? 'Farklı bir terimle aramayı deneyin.'
+                : 'Yeni bir not eklemek için + butonuna basın',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[500],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            if (_currentSearchTerm != null && _currentSearchTerm!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 16.0),
+                child: ElevatedButton.icon(
+                  icon: Icon(Icons.clear_all),
+                  label: Text('Tüm Notları Göster'),
+                  onPressed: () => _loadNotes(),
+                  style: ElevatedButton.styleFrom(backgroundColor: Color(0xFF6B7FD7), foregroundColor: Colors.white),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _notes.length,
+      itemBuilder: (context, index) {
+        final note = _notes[index];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: NoteCard(note: note),
+        );
+      },
     );
   }
 }
@@ -284,12 +285,15 @@ class NoteCard extends StatelessWidget {
 
   String _getTimeAgo() {
     final now = DateTime.now();
-    final difference = now.difference(note.createdAt);
+    if (note.createdAt == null) return '?';
+    final difference = now.difference(note.createdAt!);
 
-    if (difference.inMinutes < 60) {
-      return '${difference.inMinutes} dakika önce';
+    if (difference.inMinutes < 1) {
+      return 'şimdi';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes} dk önce';
     } else if (difference.inHours < 24) {
-      return '${difference.inHours} saat önce';
+      return '${difference.inHours} sa önce';
     } else {
       return '${difference.inDays} gün önce';
     }
@@ -305,7 +309,6 @@ class NoteCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Başlık ve Yazar Bilgisi
           ListTile(
             contentPadding: const EdgeInsets.all(16),
             title: Text(
@@ -318,13 +321,16 @@ class NoteCard extends StatelessWidget {
             ),
             subtitle: Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Row(
+              child: Wrap(
+                spacing: 8.0,
+                runSpacing: 4.0,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   CircleAvatar(
                     radius: 14,
                     backgroundColor: const Color(0xFF6B7FD7),
                     child: Text(
-                      note.ownerUsername[0].toUpperCase(),
+                      note.ownerUsername.isNotEmpty ? note.ownerUsername[0].toUpperCase() : '?',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 12,
@@ -332,78 +338,77 @@ class NoteCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
                   Text(
-                    note.ownerUsername,
+                    note.ownerUsername.isNotEmpty ? note.ownerUsername : 'Bilinmeyen',
                     style: const TextStyle(
                       color: Colors.black54,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(width: 8),
                   Text(
                     '•',
                     style: TextStyle(color: Colors.grey[400]),
                   ),
-                  const SizedBox(width: 8),
                   Text(
                     _getTimeAgo(),
                     style: TextStyle(color: Colors.grey[600]),
                   ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF6B7FD7).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      note.category,
-                      style: const TextStyle(
-                        color: Color(0xFF6B7FD7),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                  if (note.category.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6B7FD7).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        note.category,
+                        style: const TextStyle(
+                          color: Color(0xFF6B7FD7),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
           ),
-          // Not İçeriği
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Text(
-              note.content,
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.black87,
-              ),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          // PDF Dosyası ve Sayfa Bilgisi
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(16),
-                bottomRight: Radius.circular(16),
+          if (note.content.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Text(
+                note.content,
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Colors.black87,
+                ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            child: ListTile(
-              leading: const Icon(Icons.picture_as_pdf, color: Color(0xFF6B7FD7)),
-              title: Text('PDF Dosyası'),
-              subtitle: Text('Sayfa: ${note.page}'),
-              trailing: IconButton(
-                icon: const Icon(Icons.download_rounded, color: Color(0xFF6B7FD7)),
-                onPressed: () {
-                  // TODO: PDF dosyasını indirme işlemi
-                },
+          if (note.pdfFilePath != null && note.pdfFilePath!.isNotEmpty)
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(16),
+                  bottomRight: Radius.circular(16),
+                ),
+              ),
+              child: ListTile(
+                leading: const Icon(Icons.picture_as_pdf, color: Color(0xFF6B7FD7)),
+                title: Text('PDF Dosyası (${note.page} sayfa)'),
+                trailing: IconButton(
+                  icon: const Icon(Icons.download_rounded, color: Color(0xFF6B7FD7)),
+                  onPressed: () {
+                    print('Download tıklandı: ${note.pdfFilePath}');
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('İndirme işlevi henüz eklenmedi.'))
+                    );
+                  },
+                ),
               ),
             ),
-          ),
         ],
       ),
     );

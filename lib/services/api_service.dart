@@ -540,4 +540,53 @@ class ApiService {
       throw Exception('${ApiConfig.networkError}: $e');
     }
   }
+
+  // Not arama fonksiyonu
+  Future<List<Note>> searchNotes(String token, String searchTerm) async {
+    // Eğer arama terimi boşsa, tüm notları getir (veya boş liste döndür)
+    if (searchTerm.trim().isEmpty) {
+      // return getNotes(token); // İsteğe bağlı: boş arama tüm notları getirebilir
+      return []; // Veya boş arama boş sonuç döndürsün
+    }
+
+    final uri = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.searchNotes}')
+        .replace(queryParameters: {'term': searchTerm}); // Sorgu parametresini ekle
+
+    try {
+      print('Notlar API\'den aranıyor: $uri');
+      print('Kullanılan Token: $token');
+
+      final response = await http.get(
+        uri,
+        headers: _getHeaders(token), // Arama için token gerekli
+      );
+
+      print('Arama yanıtı alındı. Status: ${response.statusCode}');
+
+      if (response.statusCode == ApiConfig.statusOk) {
+        final List<dynamic> jsonData = jsonDecode(response.body);
+        print('Arama sonucu bulunan not sayısı: ${jsonData.length}');
+
+        List<Note> notes = jsonData.map((noteJson) {
+          try {
+            return Note.fromJson(noteJson as Map<String, dynamic>);
+          } catch (e) {
+            print('Arama sonucu not parse edilirken hata: $noteJson, Hata: $e');
+            return null;
+          }
+        }).where((note) => note != null)
+          .cast<Note>()
+          .toList();
+
+        return notes;
+      } else {
+        print('Arama başarısız. Status: ${response.statusCode}, Body: ${response.body}');
+        throw Exception('Not araması başarısız oldu. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Not arama sırasında hata: $e');
+      // Hata durumunda boş liste döndür
+      return [];
+    }
+  }
 } 
