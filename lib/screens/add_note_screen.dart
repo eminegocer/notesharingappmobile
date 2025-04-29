@@ -24,19 +24,56 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
   PlatformFile? _selectedFile;
   bool _isLoading = false;
   String? _errorMessage;
-  
-  final List<String> _categories = [
-    'Matematik',
-    'Fizik',
-    'Kimya',
-    'Biyoloji',
-    'Tarih',
-    'Coğrafya',
-    'Edebiyat',
-    'İngilizce',
-    'Bilgisayar Bilimi',
-    'Diğer'
-  ];
+  List<String> _categories = [];
+  bool _isCategoriesLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    setState(() {
+      _isCategoriesLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      print('Kategoriler yükleniyor...');
+      final token = await _tokenService.getToken();
+      if (token == null) {
+        throw Exception('Token bulunamadı. Lütfen tekrar giriş yapın.');
+      }
+
+      print('Token alındı, kategoriler getiriliyor...');
+      final categories = await _apiService.getNoteCategories(token);
+      print('Kategoriler başarıyla alındı: ${categories.length} adet');
+
+      if (mounted) {
+        setState(() {
+          _categories = categories;
+          _isCategoriesLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Kategoriler yüklenirken hata: $e');
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Kategoriler yüklenirken hata oluştu: $e';
+          _isCategoriesLoading = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_errorMessage!),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -242,35 +279,37 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
                     const SizedBox(height: 16),
                     
                     // Kategori
-                    DropdownButtonFormField<String>(
-                      value: _selectedCategory,
-                      decoration: InputDecoration(
-                        labelText: 'Kategori',
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
+                    _isCategoriesLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : DropdownButtonFormField<String>(
+                          value: _selectedCategory,
+                          decoration: InputDecoration(
+                            labelText: 'Kategori',
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          items: _categories.map((category) {
+                            return DropdownMenuItem(
+                              value: category,
+                              child: Text(category),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedCategory = value;
+                            });
+                          },
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Lütfen bir kategori seçin';
+                            }
+                            return null;
+                          },
                         ),
-                      ),
-                      items: _categories.map((category) {
-                        return DropdownMenuItem(
-                          value: category,
-                          child: Text(category),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedCategory = value;
-                        });
-                      },
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Lütfen bir kategori seçin';
-                        }
-                        return null;
-                      },
-                    ),
                     const SizedBox(height: 16),
                     
                     // Sayfa Sayısı

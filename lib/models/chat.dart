@@ -1,5 +1,5 @@
 class Chat {
-  final String id;
+  final String? id;
   final List<String> usersId;
   final String senderUsername;
   final String receiverUsername;
@@ -7,7 +7,7 @@ class Chat {
   final DateTime createdAt;
 
   Chat({
-    required this.id,
+    this.id,
     required this.usersId,
     required this.senderUsername,
     required this.receiverUsername,
@@ -17,7 +17,7 @@ class Chat {
 
   factory Chat.fromJson(Map<String, dynamic> json) {
     return Chat(
-      id: json['id'] as String? ?? '',
+      id: json['_id']?.toString(),
       usersId: (json['usersId'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       senderUsername: json['senderUsername'] as String? ?? '',
       receiverUsername: json['receiverUsername'] as String? ?? '',
@@ -28,7 +28,7 @@ class Chat {
 }
 
 class Message {
-  final String id;
+  final String? id;
   final String senderId;
   final String senderUsername;
   final String content;
@@ -36,7 +36,7 @@ class Message {
   final DateTime createdAt;
 
   Message({
-    required this.id,
+    this.id,
     required this.senderId,
     required this.senderUsername,
     required this.content,
@@ -46,8 +46,8 @@ class Message {
 
   factory Message.fromJson(Map<String, dynamic> json) {
     return Message(
-      id: json['id'] as String? ?? '',
-      senderId: json['senderId'] as String? ?? '',
+      id: json['_id']?.toString(),
+      senderId: json['senderId']?.toString() ?? '',
       senderUsername: json['senderUsername'] as String? ?? '',
       content: json['content'] as String? ?? '',
       fileUrl: json['fileUrl'] as String?,

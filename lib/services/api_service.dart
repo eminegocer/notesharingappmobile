@@ -5,37 +5,12 @@ import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import '../models/note.dart';
 import '../models/chat.dart';
+import '../services/token_service.dart';
 
 class ApiService {
   final client = http.Client();
-
-  // ASP.NET Core API için header'ları hazırlama
-  Map<String, String> _getHeaders(String? token) {
-    final headers = {
-      'Content-Type': 'application/json',
-      'Accept': '*/*',
-    };
-
-    if (token != null && token.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $token';
-    }
-
-    return headers;
-  }
-
-  // Multipart request için header'ları hazırlama
-  Map<String, String> _getMultipartHeaders(String token) {
-    final headers = {
-      'Content-Type': 'multipart/form-data',
-      'Accept': '*/*',
-    };
-
-    if (token.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $token';
-    }
-
-    return headers;
-  }
+  final TokenService _tokenService = TokenService();
+  String? _currentUsername;
 
   // Hata işleme yardımcı metodu
   dynamic _handleResponse(http.Response response) {
@@ -64,45 +39,38 @@ class ApiService {
 
       final response = await http.get(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.notes}'),
-        headers: _getHeaders(token), // Notları getirmek için token gerekli
+        headers: ApiConfig.getHeaders(token),
       );
 
       print('Notlar yanıtı alındı. Status: ${response.statusCode}');
 
       if (response.statusCode == ApiConfig.statusOk) {
-        // Yanıt gövdesini decode et (bir liste bekleniyor)
         final List<dynamic> jsonData = jsonDecode(response.body);
         print('Alınan not sayısı: ${jsonData.length}');
 
-        // JSON listesini List<Note> listesine dönüştür
         List<Note> notes = jsonData.map((noteJson) {
           try {
             return Note.fromJson(noteJson as Map<String, dynamic>);
           } catch (e) {
             print('Not parse edilirken hata: $noteJson, Hata: $e');
-            // Hatalı veriyi atlamak için null döndür ve sonra filtrele
             return null;
           }
-        }).where((note) => note != null) // null olanları filtrele
-          .cast<Note>() // Tipi List<Note> olarak belirle
+        }).where((note) => note != null)
+          .cast<Note>()
           .toList();
 
         return notes;
       } else {
-        // Hata durumunu işle
         print('Notlar yüklenemedi. Status: ${response.statusCode}, Body: ${response.body}');
         throw Exception('Notlar yüklenirken hata oluştu. Status: ${response.statusCode}');
       }
-
     } catch (e) {
       print('Notlar yüklenirken bir hata oluştu: $e');
-      // Hata durumunda boş liste döndür veya hatayı yeniden fırlat
-      // throw Exception('${ApiConfig.networkError}: $e'); 
-      return []; // Şimdilik boş liste döndürelim
+      return [];
     }
   }
 
-  // Login işlemi
+  // Login işlemi için apiye istek gönderme
   Future<Map<String, dynamic>> login(String userName, String email, String password) async {
     try {
       print('Login isteği gönderiliyor: ${ApiConfig.baseUrl}${ApiConfig.login}');
@@ -110,26 +78,18 @@ class ApiService {
 
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.login}'),
-        headers: _getHeaders(null), // No token needed for login
+        headers: ApiConfig.getHeaders(null), // No token needed for login
         body: jsonEncode({
-          // Backend'in User modeline göre alan adları eşleşmeli
-          // HomeApiController'daki Login metodu [FromBody] User user alıyor.
-          // User modelinde hangi alanlar var? Genellikle UserName veya Email ve Password olur.
-          // Backend kodu hem UserName hem Password kontrolü yapıyor gibi.
-          // E-posta da gönderelim, belki ileride kullanılır.
-          'UserName': userName, // Backend User modelindeki özellikle eşleştiğini varsayalım
-          'Email': email,       // Backend User modelindeki özellikle eşleştiğini varsayalım
-          'Password': password  // Backend User modelindeki özellikle eşleştiğini varsayalım
+          'UserName': userName, 
+          'Email': email,      
+          'Password': password  
         }),
       );
 
       print('Login yanıtı alındı. Status: ${response.statusCode}, Body: ${response.body}');
 
-      // Doğrudan başarılı yanıt döndürmek yerine, gerçek yanıtı işle
       if (response.statusCode == ApiConfig.statusOk) {
         final responseBody = jsonDecode(response.body);
-        // Backend'den gelen yanıtı doğrudan döndür (veya gerekli alanları seçerek)
-        // Backend yanıtı: { message, userId, userName, token }
         return {
           'success': true, // Başarıyı status code'dan anlıyoruz
           'message': responseBody['message'] ?? 'Giriş başarılı',
@@ -168,7 +128,7 @@ class ApiService {
     try {
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.register}'),
-        headers: _getHeaders(null),
+        headers: ApiConfig.getHeaders(null),
         body: jsonEncode({
           'email': email,
           'password': password,
@@ -186,7 +146,7 @@ class ApiService {
     try {
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.logout}'),
-        headers: _getHeaders(token),
+        headers: ApiConfig.getHeaders(token),
       );
       _handleResponse(response);
     } catch (e) {
@@ -197,13 +157,27 @@ class ApiService {
   // Mevcut kullanıcı bilgilerini getirme
   Future<Map<String, dynamic>> getCurrentUser(String token) async {
     try {
+      final url = '${ApiConfig.baseUrl}/api/user/current';
+      final headers = ApiConfig.getHeaders(token);
+      print('Kullanılan url: $url');
+      print('Kullanılan token: $token');
+      print('Headers: $headers');
       final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.getCurrentUser}'),
-        headers: _getHeaders(token),
+        Uri.parse(url),
+        headers: headers,
       );
-      return _handleResponse(response);
+
+      print('getCurrentUser status: ${response.statusCode}');
+      print('getCurrentUser body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Failed to get current user');
+      }
     } catch (e) {
-      throw Exception('${ApiConfig.networkError}: $e');
+      print('Error getting current user: $e');
+      throw Exception('Failed to get current user');
     }
   }
 
@@ -212,7 +186,7 @@ class ApiService {
     try {
       final response = await http.get(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.checkAuth}'),
-        headers: _getHeaders(token),
+        headers: ApiConfig.getHeaders(token),
       );
       final result = _handleResponse(response);
       return result[ApiConfig.successKey] ?? false;
@@ -226,7 +200,7 @@ class ApiService {
     try {
       final response = await http.get(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.myNotes}'),
-        headers: _getHeaders(token),
+        headers: ApiConfig.getHeaders(token),
       );
       return _handleResponse(response);
     } catch (e) {
@@ -235,14 +209,46 @@ class ApiService {
   }
 
   // Not kategorilerini getirme
-  Future<List<dynamic>> getNoteCategories(String token) async {
+  Future<List<String>> getNoteCategories(String token) async {
     try {
+      print('Kategoriler yükleniyor...');
+      print('Token: $token');
+      print('URL: ${ApiConfig.baseUrl}${ApiConfig.categories}');
+
       final response = await http.get(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.categories}'),
-        headers: _getHeaders(token),
+        headers: ApiConfig.getHeaders(token),
       );
-      return _handleResponse(response);
+
+      print('Kategoriler yanıtı alındı. Status: ${response.statusCode}');
+      print('Yanıt body: ${response.body}');
+
+      if (response.statusCode == ApiConfig.statusOk) {
+        try {
+          final List<dynamic> jsonData = jsonDecode(response.body);
+          print('Parse edilen kategori sayısı: ${jsonData.length}');
+          
+          // Kategorileri String listesine dönüştür ve boş olanları filtrele
+          final categories = jsonData
+              .where((category) => category != null && category.toString().isNotEmpty)
+              .map((category) => category.toString())
+              .toList();
+
+          print('Dönüştürülen kategori sayısı: ${categories.length}');
+          return categories;
+        } catch (e) {
+          print('JSON parse hatası: $e');
+          throw Exception('Kategoriler parse edilirken hata oluştu: $e');
+        }
+      } else if (response.statusCode == ApiConfig.statusUnauthorized) {
+        print('Yetkisiz erişim hatası');
+        throw Exception('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+      } else {
+        print('API yanıt hatası. Status: ${response.statusCode}, Body: ${response.body}');
+        throw Exception('Kategoriler yüklenirken hata oluştu. Status: ${response.statusCode}');
+      }
     } catch (e) {
+      print('Kategoriler yüklenirken hata: $e');
       throw Exception('${ApiConfig.networkError}: $e');
     }
   }
@@ -252,7 +258,7 @@ class ApiService {
     try {
       final response = await http.get(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.getNoteById}$noteId'),
-        headers: _getHeaders(token),
+        headers: ApiConfig.getHeaders(token),
       );
       return _handleResponse(response);
     } catch (e) {
@@ -265,7 +271,7 @@ class ApiService {
     try {
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.addNote}'),
-        headers: _getHeaders(token),
+        headers: ApiConfig.getHeaders(token),
         body: jsonEncode(noteData),
       );
       return _handleResponse(response);
@@ -279,7 +285,7 @@ class ApiService {
     try {
       final response = await http.delete(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.deleteNote}$noteId'),
-        headers: _getHeaders(token),
+        headers: ApiConfig.getHeaders(token),
       );
       _handleResponse(response);
     } catch (e) {
@@ -288,14 +294,12 @@ class ApiService {
   }
 
   // Chat başlatma
-  Future<Map<String, dynamic>> startChat(String token, String targetUsername) async {
+  Future<Map<String, dynamic>> startChat(String token, String targetUsername, String message) async {
     try {
       final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.startChat}'),
-        headers: _getHeaders(token),
-        body: jsonEncode({
-          'targetUsername': targetUsername,
-        }),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.addChat}'),
+        headers: ApiConfig.getHeaders(token),
+        body: jsonEncode(targetUsername), // Backend sadece kullanıcı adını bekliyor
       );
       return _handleResponse(response);
     } catch (e) {
@@ -307,8 +311,8 @@ class ApiService {
   Future<List<String>> searchUsers(String token, String searchTerm) async {
     try {
       final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}/api/chat/search-users?searchTerm=$searchTerm'),
-        headers: _getHeaders(token),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.searchUsers}?searchTerm=$searchTerm'),
+        headers: ApiConfig.getHeaders(token),
       );
 
       if (response.statusCode == 200) {
@@ -322,69 +326,141 @@ class ApiService {
     }
   }
 
-  // Chat geçmişini getirme
-  Future<List<dynamic>> getChatHistory(String token, String username) async {
+  // Kişisel sohbetleri getirme
+  Future<List<Chat>> getPersonalChats(String token) async {
     try {
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.chatHistory}$username'),
-        headers: _getHeaders(token),
-      );
-      return _handleResponse(response);
-    } catch (e) {
-      throw Exception('${ApiConfig.networkError}: $e');
-    }
-  }
-
-  // Chat kullanıcılarını getirme
-  Future<List<dynamic>> getChatUsers(String token) async {
-    try {
+      print('Kişisel sohbetler yükleniyor...');
       final response = await http.get(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.chatUsers}'),
-        headers: _getHeaders(token),
+        headers: ApiConfig.getHeaders(token),
       );
-      return _handleResponse(response);
+
+      print('Kişisel sohbetler yanıtı alındı. Status: ${response.statusCode}');
+      
+      if (response.statusCode == ApiConfig.statusOk) {
+        final List<dynamic> usernames = jsonDecode(response.body);
+        print('Alınan kullanıcı sayısı: ${usernames.length}');
+        
+        List<Chat> chats = [];
+        for (String username in usernames) {
+          try {
+            final chatResponse = await http.get(
+              Uri.parse('${ApiConfig.baseUrl}${ApiConfig.chatHistory}?targetUsername=$username'),
+              headers: ApiConfig.getHeaders(token),
+            );
+            
+            if (chatResponse.statusCode == ApiConfig.statusOk) {
+              final chatData = jsonDecode(chatResponse.body)['chatHistory'];
+              chats.add(Chat.fromJson(chatData));
+            }
+          } catch (e) {
+            print('Sohbet yüklenirken hata: $e');
+          }
+        }
+        return chats;
+      } else {
+        print('Kişisel sohbetler yanıt hatası: ${response.body}');
+        throw Exception('Kişisel sohbetler yüklenirken hata oluştu');
+      }
     } catch (e) {
-      throw Exception('${ApiConfig.networkError}: $e');
+      print('Kişisel sohbetler yüklenirken hata: $e');
+      return [];
     }
   }
 
-  // Gruba katılma
-  Future<Map<String, dynamic>> joinGroup(String token, String groupId) async {
-    try {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.joinGroup}'),
-        headers: _getHeaders(token),
-        body: jsonEncode({
-          'groupId': groupId,
-        }),
-      );
-      return _handleResponse(response);
-    } catch (e) {
-      throw Exception('${ApiConfig.networkError}: $e');
-    }
-  }
-
-  // Grup arama
-  Future<List<dynamic>> searchGroups(String token, String searchTerm) async {
+  // Grup sohbetlerini getirme
+  Future<List<dynamic>> getGroupChats(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.searchGroups}?term=$searchTerm'),
-        headers: _getHeaders(token),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.getUserGroups}'),
+        headers: ApiConfig.getHeaders(token),
       );
-      return _handleResponse(response);
+
+      if (response.statusCode == 200) {
+        final List<dynamic> groups = json.decode(response.body);
+        print('Retrieved ${groups.length} group chats');
+        return groups;
+      } else {
+        throw Exception('Failed to load group chats');
+      }
     } catch (e) {
+      print('Error getting group chats: $e');
+      return [];
+    }
+  }
+
+  // Sohbet geçmişini getirme
+  Future<Chat> getChatHistory(String token, String targetUsername) async {
+    try {
+      print('Sohbet geçmişi yükleniyor...');
+      print('Hedef kullanıcı: $targetUsername');
+      
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.chatHistory}?targetUsername=$targetUsername'),
+        headers: ApiConfig.getHeaders(token),
+      );
+
+      print('Sohbet geçmişi yanıtı alındı. Status: ${response.statusCode}');
+      print('Yanıt body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        print('Parse edilen veri: $data');
+        
+        if (data['chatHistory'] == null) {
+          print('chatHistory null, yeni sohbet oluşturuluyor...');
+          return Chat(
+            senderUsername: targetUsername,
+            receiverUsername: targetUsername,
+            messages: [],
+            usersId: [],
+            createdAt: DateTime.now(),
+          );
+        }
+        
+        final chatData = data['chatHistory'];
+        print('Chat verisi: $chatData');
+        
+        final messages = (chatData['messages'] as List?)?.map((msg) => Message(
+          senderId: msg['senderId'] ?? '',
+          senderUsername: msg['senderUsername'] ?? '',
+          content: msg['content'] ?? '',
+          fileUrl: msg['fileUrl'],
+          createdAt: DateTime.parse(msg['createdAt'] ?? DateTime.now().toIso8601String()),
+        )).toList() ?? [];
+        
+        print('Parse edilen mesaj sayısı: ${messages.length}');
+        
+        return Chat(
+          senderUsername: chatData['senderUsername'] ?? targetUsername,
+          receiverUsername: chatData['receiverUsername'] ?? targetUsername,
+          messages: messages,
+          usersId: [],
+          createdAt: DateTime.now(),
+        );
+      } else {
+        print('Sohbet geçmişi yüklenemedi. Status: ${response.statusCode}');
+        throw Exception('Sohbet geçmişi yüklenemedi');
+      }
+    } catch (e) {
+      print('Sohbet geçmişi yüklenirken hata: $e');
       throw Exception('${ApiConfig.networkError}: $e');
     }
   }
 
-  // Okul gruplarını getirme
-  Future<List<dynamic>> getSchoolGroups(String token) async {
+  // Grup mesajlarını getirme
+  Future<List<dynamic>> getGroupMessages(String token, String groupId) async {
     try {
       final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.schoolGroups}'),
-        headers: _getHeaders(token),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.groupMessages}?groupId=$groupId'),
+        headers: ApiConfig.getHeaders(token),
       );
-      return _handleResponse(response);
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception('Grup mesajları yüklenemedi');
+      }
     } catch (e) {
       throw Exception('${ApiConfig.networkError}: $e');
     }
@@ -394,12 +470,12 @@ class ApiService {
   Future<Chat> getChatView(String token, String targetUsername) async {
     try {
       final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}/api/chat/chat-view?targetUsername=$targetUsername'),
-        headers: _getHeaders(token),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.chatHistory}?targetUsername=$targetUsername'),
+        headers: ApiConfig.getHeaders(token),
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = jsonDecode(response.body)['chatHistory'];
         return Chat.fromJson(data);
       } else {
         throw Exception('Sohbet yüklenemedi');
@@ -414,8 +490,8 @@ class ApiService {
     try {
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}/api/chat/add-chat'),
-        headers: _getHeaders(token),
-        body: jsonEncode(targetUsername),
+        headers: ApiConfig.getHeaders(token),
+        body: '"$targetUsername"',
       );
 
       if (response.statusCode == 200) {
@@ -434,7 +510,7 @@ class ApiService {
       var uri = Uri.parse('${ApiConfig.baseUrl}/api/chat/upload-file');
       var request = http.MultipartRequest('POST', uri);
       
-      request.headers.addAll(_getMultipartHeaders(token));
+      request.headers.addAll(ApiConfig.getMultipartHeaders(token));
       
       request.files.add(
         http.MultipartFile.fromBytes(
@@ -456,7 +532,7 @@ class ApiService {
       throw Exception('${ApiConfig.networkError}: $e');
     }
   }
-
+  // Not ekleme (PDF dosyası ile birlikte)
   Future<Map<String, dynamic>> createNoteWithFile(
     String token,
     Map<String, dynamic> noteData,
@@ -558,7 +634,7 @@ class ApiService {
 
       final response = await http.get(
         uri,
-        headers: _getHeaders(token), // Arama için token gerekli
+        headers: ApiConfig.getHeaders(token), // Arama için token gerekli
       );
 
       print('Arama yanıtı alındı. Status: ${response.statusCode}');
@@ -587,6 +663,41 @@ class ApiService {
       print('Not arama sırasında hata: $e');
       // Hata durumunda boş liste döndür
       return [];
+    }
+  }
+
+  // Mesaj gönderme
+  Future<Map<String, dynamic>> sendMessage(String token, String targetUsername, String message) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/chat/send-message'),
+        headers: ApiConfig.getHeaders(token),
+        body: jsonEncode({
+          'targetUsername': targetUsername,
+          'content': message,
+        }),
+      );
+      return _handleResponse(response);
+    } catch (e) {
+      throw Exception('${ApiConfig.networkError}: $e');
+    }
+  }
+
+  // Grup mesajı gönderme
+  Future<Map<String, dynamic>> sendGroupMessage(String token, String groupId, String message, String senderUsername) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.sendGroupMessage}'),
+        headers: ApiConfig.getHeaders(token),
+        body: jsonEncode({
+          'groupId': groupId,
+          'content': message,
+          'senderUsername': senderUsername,
+        }),
+      );
+      return _handleResponse(response);
+    } catch (e) {
+      throw Exception('${ApiConfig.networkError}: $e');
     }
   }
 } 

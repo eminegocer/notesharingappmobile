@@ -5,8 +5,7 @@ import '../services/api_service.dart';
 import '../services/token_service.dart';
 import 'home_screen.dart'; // NoteCard'ı kullanmak için
 
-// SearchDelegate<String?>: Kullanıcı aramayı tamamladığında veya iptal ettiğinde
-// String? (arama terimi veya null) döndürür.
+// SearchDelegate<String?>: Kullanıcı aramayı tamamladığında veya iptal ettiğinde.
 class NoteSearchDelegate extends SearchDelegate<String?> {
   final ApiService apiService;
   final TokenService tokenService;
@@ -46,11 +45,6 @@ class NoteSearchDelegate extends SearchDelegate<String?> {
   // Kullanıcı aramayı gönderdiğinde (örn: klavyede Enter'a bastığında) çağrılır
   @override
   Widget buildResults(BuildContext context) {
-    // Arama terimini HomeScreen'e geri gönderiyoruz
-    // HomeScreen bu terimle _loadNotes'u çağıracak.
-    // Bu nedenle burada tekrar API çağrısı yapıp sonuç göstermeye gerek yok.
-    // Sadece delegate'i kapatıp terimi döndürelim.
-    // Eğer sorgu boş değilse ve son arama ile aynı değilse kapat.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (query.trim().isNotEmpty && query != _lastSearchTerm) {
         close(context, query.trim());
@@ -149,11 +143,6 @@ class NoteSearchDelegate extends SearchDelegate<String?> {
        if (currentQuery == _lastSearchTerm && _suggestions != null) {
          return _suggestions!;
        }
-
-       // Debounce eklenebilir:
-       // await Future.delayed(const Duration(milliseconds: 300));
-       // if (currentQuery != query) return _suggestions ?? []; 
-
        try {
           // API'den sonuçları al
           return await apiService.searchNotes(token, currentQuery);

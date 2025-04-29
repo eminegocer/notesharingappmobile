@@ -6,6 +6,7 @@ import '../services/token_service.dart';
 import './chat_screen.dart';
 import './add_note_screen.dart';
 import './note_search_delegate.dart';
+import './note_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -46,7 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (token == null) {
         throw Exception('Oturum bilgisi bulunamadı. Lütfen tekrar giriş yapın.');
       }
-
+      // searchTerm null değilse arama yapar ve ugyun notları yükler null ise tüm notları yükler
       List<Note> fetchedNotes;
       if (searchTerm != null && searchTerm.isNotEmpty) {
         print('Aranıyor: "$searchTerm"');
@@ -83,20 +84,33 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
-
+  // ekranı yenileme işlemi için kullanılan fonksiyon
   Future<void> _handleRefresh() async {
     await _loadNotes();
   }
 
+ // ekranın nasıl görüneceğini belirleyen widget
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
+      // uygulamanın üst kısmında bulunan çubuk
+      // Arama butonu ve bildirim butonunu içerir
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.white,
+        leading: _currentSearchTerm != null && _currentSearchTerm!.isNotEmpty
+        // Arama ekranında geri butonu gösterir
+          ? IconButton(
+              icon: const Icon(Icons.arrow_back, color: Color(0xFF6B7FD7)),
+              onPressed: () => _loadNotes(),
+            )
+          : null,
+          // uygulamanın başlığı
         title: Text(
-          'NOTLARIM',
+          _currentSearchTerm != null && _currentSearchTerm!.isNotEmpty
+              ? 'ARAMA SONUÇLARI'
+              : 'NOTLARIM',
           style: GoogleFonts.poppins(
             color: const Color(0xFF6B7FD7),
             fontWeight: FontWeight.bold,
@@ -104,6 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         actions: [
+          // Arama butonu, tıklandığında notları  arama ekranını açar
           IconButton(
             icon: const Icon(Icons.search_rounded, color: Color(0xFF6B7FD7)),
             tooltip: 'Not Ara',
@@ -120,6 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             },
           ),
+          // Bildirim butonu, tıklandığında bildirim ekranını açar
           IconButton(
             icon: const Icon(Icons.notifications_outlined, color: Color(0xFF6B7FD7)),
             onPressed: () {
@@ -128,12 +144,14 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+      // Ekranın gövdesi, notları listeleyen bir widget içerir
       body: RefreshIndicator(
         key: _refreshKey,
         onRefresh: _handleRefresh,
         color: const Color(0xFF6B7FD7),
         child: _buildBody(),
       ),
+      // Yeni not eklemek için kullanılan buton
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           final result = await Navigator.push(
@@ -148,6 +166,7 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: const Color(0xFF6B7FD7),
         child: const Icon(Icons.add_rounded),
       ),
+      // alt navigasyon çubuğu, tıklandığında ilgili ekranı açar
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: 0,
         selectedItemColor: const Color(0xFF6B7FD7),
@@ -157,6 +176,7 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.home_rounded),
             label: 'Ana Sayfa',
           ),
+        
           BottomNavigationBarItem(
             icon: Icon(Icons.chat_bubble_outline_rounded),
             label: 'Sohbet',
@@ -177,7 +197,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
+  // Notlar ekranının gövdesini oluşturan widget
+  // Notlar yüklendiğinde, hata oluştuğunda veya not yoksa uygun mesajları gösterir
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(
@@ -260,7 +281,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
-
+    // Notlar yüklendiğinde, notları listeleyen bir widget döner
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: _notes.length,
@@ -268,21 +289,24 @@ class _HomeScreenState extends State<HomeScreen> {
         final note = _notes[index];
         return Padding(
           padding: const EdgeInsets.only(bottom: 16),
-          child: NoteCard(note: note),
+          child: NoteCard(note: note, searchTerm: _currentSearchTerm),
         );
       },
     );
   }
 }
 
+// Not kartını oluşturan widget
 class NoteCard extends StatelessWidget {
   final Note note;
+  final String? searchTerm;
 
   const NoteCard({
     super.key,
     required this.note,
+    this.searchTerm,
   });
-
+  // notun oluşturulma zamanı
   String _getTimeAgo() {
     final now = DateTime.now();
     if (note.createdAt == null) return '?';
@@ -298,7 +322,7 @@ class NoteCard extends StatelessWidget {
       return '${difference.inDays} gün önce';
     }
   }
-
+ // Not kartının içeriğini oluşturan widget
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -306,110 +330,135 @@ class NoteCard extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(
-            contentPadding: const EdgeInsets.all(16),
-            title: Text(
-              note.title,
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
+      child: InkWell(
+        // not kartına tıklandığında detay ekranına yönlendirir
+        onTap: () async {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => NoteDetailScreen(
+                note: note,
+                searchTerm: searchTerm,
               ),
             ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Wrap(
-                spacing: 8.0,
-                runSpacing: 4.0,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  CircleAvatar(
-                    radius: 14,
-                    backgroundColor: const Color(0xFF6B7FD7),
-                    child: Text(
-                      note.ownerUsername.isNotEmpty ? note.ownerUsername[0].toUpperCase() : '?',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    note.ownerUsername.isNotEmpty ? note.ownerUsername : 'Bilinmeyen',
-                    style: const TextStyle(
-                      color: Colors.black54,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Text(
-                    '•',
-                    style: TextStyle(color: Colors.grey[400]),
-                  ),
-                  Text(
-                    _getTimeAgo(),
-                    style: TextStyle(color: Colors.grey[600]),
-                  ),
-                  if (note.category.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF6B7FD7).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+          );
+
+          // Eğer geri dönüş değeri bir arama terimi ise, o terimle aramayı yenile
+          if (result != null && result is String) {
+            if (context.mounted) {
+              final homeState = context.findAncestorStateOfType<_HomeScreenState>();
+              if (homeState != null) {
+                homeState._loadNotes(searchTerm: result);
+              }
+            }
+          }
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              contentPadding: const EdgeInsets.all(16),
+              title: Text(
+                note.title,
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Wrap(
+                  spacing: 8.0,
+                  runSpacing: 4.0,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    CircleAvatar(
+                      radius: 14,
+                      backgroundColor: const Color(0xFF6B7FD7),
                       child: Text(
-                        note.category,
+                        note.ownerUsername.isNotEmpty ? note.ownerUsername[0].toUpperCase() : '?',
                         style: const TextStyle(
-                          color: Color(0xFF6B7FD7),
+                          color: Colors.white,
                           fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
-                ],
-              ),
-            ),
-          ),
-          if (note.content.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Text(
-                note.content,
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.black87,
-                ),
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          if (note.pdfFilePath != null && note.pdfFilePath!.isNotEmpty)
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(16),
-                  bottomRight: Radius.circular(16),
-                ),
-              ),
-              child: ListTile(
-                leading: const Icon(Icons.picture_as_pdf, color: Color(0xFF6B7FD7)),
-                title: Text('PDF Dosyası (${note.page} sayfa)'),
-                trailing: IconButton(
-                  icon: const Icon(Icons.download_rounded, color: Color(0xFF6B7FD7)),
-                  onPressed: () {
-                    print('Download tıklandı: ${note.pdfFilePath}');
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('İndirme işlevi henüz eklenmedi.'))
-                    );
-                  },
+                    Text(
+                      note.ownerUsername.isNotEmpty ? note.ownerUsername : 'Bilinmeyen',
+                      style: const TextStyle(
+                        color: Colors.black54,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      '•',
+                      style: TextStyle(color: Colors.grey[400]),
+                    ),
+                    Text(
+                      _getTimeAgo(),
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                    if (note.category.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF6B7FD7).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          note.category,
+                          style: const TextStyle(
+                            color: Color(0xFF6B7FD7),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
-        ],
+            if (note.content.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Text(
+                  note.content,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.black87,
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            if (note.pdfFilePath != null && note.pdfFilePath!.isNotEmpty)
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(16),
+                    bottomRight: Radius.circular(16),
+                  ),
+                ),
+                child: ListTile(
+                  leading: const Icon(Icons.picture_as_pdf, color: Color(0xFF6B7FD7)),
+                  title: Text('PDF Dosyası (${note.page} sayfa)'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.download_rounded, color: Color(0xFF6B7FD7)),
+                    onPressed: () {
+                      print('Download tıklandı: ${note.pdfFilePath}');
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('İndirme işlevi henüz eklenmedi.'))
+                      );
+                    },
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

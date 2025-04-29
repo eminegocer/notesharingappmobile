@@ -1,9 +1,5 @@
 class ApiConfig {
-  // API Base URL - Android Emulator için özel IP adresi
   static const String baseUrl = 'http://10.0.2.2:5000';
-  // Not: Android Emulator'da localhost yerine 10.0.2.2 kullanılmalıdır
-  // Gerçek cihazda test ederken IP adresini değiştirmelisiniz
-  // static const String baseUrl = 'http://YOUR_LOCAL_IP:5000';
   
   // Authentication endpoints - RESTful API için
   static const String login = '/api/home/login';
@@ -16,22 +12,26 @@ class ApiConfig {
   static const String notes = '/api/notes';
   static const String myNotes = '/api/notes/my';
   static const String categories = '/api/notes/categories';
-  static const String addNote = '/api/notes';  // Endpoint '/api/notes' olarak güncellendi
-  static const String getNoteById = '/api/notes/';  // Kullanım: getNoteById + noteId
-  static const String deleteNote = '/api/notes/';    // Kullanım: deleteNote + noteId
-  static const String searchNotes = '/api/notes/search'; // Not arama endpoint'i
+  static const String addNote = '/api/notes';
+  static const String getNoteById = '/api/notes/';
+  static const String deleteNote = '/api/notes/';
+  static const String searchNotes = '/api/notes/search';
   
   // Chat endpoints
-  static const String startChat = '/api/chat/start';
-  static const String searchUsers = '/api/users/search';
-  static const String uploadChatFile = '/api/chat/upload';
-  static const String chatHistory = '/api/chat/history/'; // Kullanım: chatHistory + username
-  static const String chatUsers = '/api/chat/users';
+  static const String addChat = '/api/chat/add-chat';
+  static const String searchUsers = '/api/chat/search-users';
+  static const String uploadChatFile = '/api/chat/upload-file';
+  static const String chatHistory = '/api/chat/chat-history';
+  static const String chatUsers = '/api/chat/chat-users';
   
   // Group chat endpoints
-  static const String joinGroup = '/api/groups/join';
-  static const String searchGroups = '/api/groups/search';
-  static const String schoolGroups = '/api/groups/school';
+  static const String joinGroup = '/api/chat/join-school-group';
+  static const String getUserGroups = '/api/chat/user-school-groups';
+  static const String createGroup = '/api/chat/create-group';
+  static const String groupMessages = '/api/chat/group-messages';
+  
+  // New endpoint
+  static const String sendGroupMessage = '/api/chat/send-group-message';
   
   // HTTP Status Codes
   static const int statusOk = 200;
@@ -63,7 +63,6 @@ class ApiConfig {
       'Connection': 'keep-alive',
     };
 
-    // JWT token'ı Authorization header'ına ekleme
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
     }
@@ -74,13 +73,10 @@ class ApiConfig {
   // Multipart request headers
   static Map<String, String> getMultipartHeaders(String token) {
     final headers = {
-      // Content-Type: multipart/form-data yerine,
-      // http.MultipartRequest tarafından otomatik olarak boundary ile ayarlanacak
       'Accept': 'application/json',
       'Connection': 'keep-alive',
     };
 
-    // JWT token'ı Authorization header'ına ekleme
     if (token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
     }

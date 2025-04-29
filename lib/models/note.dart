@@ -39,7 +39,7 @@ class Note {
       noteId: json['noteId'],
       title: json['title'] ?? '',
       content: json['content'] ?? '',
-      category: json['category'] ?? 'Genel',
+      category: json['category']?.toString() ?? 'Genel',
       page: json['page'] ?? 0,
       ownerId: json['ownerId'],
       ownerUsername: json['ownerUsername'] ?? 'Bilinmeyen Kullanıcı',
