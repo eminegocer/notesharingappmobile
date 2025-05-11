@@ -32,6 +32,12 @@ class ApiConfig {
   
   // New endpoint
   static const String sendGroupMessage = '/api/chat/send-group-message';
+
+  // Profile endpoints
+  static const String getProfile = '/api/profile';
+  static const String updateProfile = '/api/profile/update';
+  static const String sharedNotes = '/api/profile/shared-notes';
+  static const String receivedNotes = '/api/profile/received-notes';
   
   // HTTP Status Codes
   static const int statusOk = 200;

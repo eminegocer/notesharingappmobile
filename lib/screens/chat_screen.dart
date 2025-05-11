@@ -245,6 +245,12 @@ class _ChatScreenState extends State<ChatScreen> {
             fontSize: 24,
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search, color: Color(0xFF6B7FD7)),
+            onPressed: _showUserSearchDialog,
+          ),
+        ],
         leading: _selectedUsername != null || _selectedGroupId != null
           ? IconButton(
               icon: const Icon(Icons.arrow_back, color: Color(0xFF6B7FD7)),
@@ -549,5 +555,217 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
+  }
+
+  void _showUserSearchDialog() {
+    bool dialogOpen = true;
+    final TextEditingController _searchController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) {
+        String searchTerm = '';
+        List<String> userSuggestions = [];
+        List<Map<String, dynamic>> groupSuggestions = [];
+        bool isLoading = false;
+
+        return StatefulBuilder(
+          builder: (context, setState) {
+            Future<void> _onSearchChanged(String value) async {
+              if (!dialogOpen) return;
+              setState(() {
+                searchTerm = value;
+                isLoading = true;
+              });
+              if (value.length < 2) {
+                if (!dialogOpen) return;
+                setState(() {
+                  userSuggestions = [];
+                  groupSuggestions = [];
+                  isLoading = false;
+                });
+                return;
+              }
+              final token = await _tokenService.getToken();
+              final userResults = await _apiService.searchUsers(token!, value);
+              final groupResults = await _apiService.searchGroups(token, value);
+              print('Kullanıcı arama sonuçları: $userResults');
+              print('Grup arama sonuçları: $groupResults');
+              if (!dialogOpen) return;
+              setState(() {
+                userSuggestions = userResults;
+                groupSuggestions = groupResults;
+                isLoading = false;
+              });
+            };
+
+            return WillPopScope(
+              onWillPop: () async {
+                dialogOpen = false;
+                return true;
+              },
+              child: AlertDialog(
+                backgroundColor: const Color(0xFFF5F6FA),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                title: Text(
+                  'Kullanıcı veya Grup Ara',
+                  style: TextStyle(
+                    color: Color(0xFF6B7FD7),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 22,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.08),
+                              blurRadius: 8,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: TextField(
+                          controller: _searchController,
+                          autofocus: true,
+                          decoration: InputDecoration(
+                            prefixIcon: Icon(Icons.search, color: Color(0xFF6B7FD7)),
+                            hintText: 'Grup adı veya kişi adı girin',
+                            hintStyle: TextStyle(color: Colors.grey[400]),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide.none,
+                            ),
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          ),
+                          style: TextStyle(fontSize: 16, color: Color(0xFF3A3A3A)),
+                          onChanged: _onSearchChanged,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (isLoading)
+                        Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6B7FD7))),
+                        ),
+                      if (!isLoading && userSuggestions.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8.0),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text('Kişiler', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF6B7FD7))),
+                          ),
+                        ),
+                      if (!isLoading && userSuggestions.isNotEmpty)
+                        ...userSuggestions.map((s) => Card(
+                          color: Colors.white,
+                          elevation: 2,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: Color(0xFF6B7FD7).withOpacity(0.15),
+                              child: Text(
+                                s.isNotEmpty ? s[0].toUpperCase() : '?',
+                                style: TextStyle(color: Color(0xFF6B7FD7), fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            title: Text(
+                              s,
+                              style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF3A3A3A)),
+                            ),
+                            hoverColor: Color(0xFF6B7FD7).withOpacity(0.08),
+                            onTap: () async {
+                              dialogOpen = false;
+                              Navigator.of(context).pop();
+                              await _startChatWithUser(s);
+                            },
+                          ),
+                        )),
+                      if (!isLoading && groupSuggestions.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12.0, bottom: 8.0),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text('Gruplar', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF6B7FD7))),
+                          ),
+                        ),
+                      if (!isLoading && groupSuggestions.isNotEmpty)
+                        ...groupSuggestions.map((g) => Card(
+                          color: Colors.white,
+                          elevation: 2,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: Color(0xFF6B7FD7).withOpacity(0.15),
+                              child: Icon(Icons.group, color: Color(0xFF6B7FD7)),
+                            ),
+                            title: Text(
+                              g['groupName'] ?? '-',
+                              style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF3A3A3A)),
+                            ),
+                            subtitle: Text(g['schoolName'] ?? ''),
+                            hoverColor: Color(0xFF6B7FD7).withOpacity(0.08),
+                            onTap: () async {
+                              dialogOpen = false;
+                              Navigator.of(context).pop();
+                              // Grup sohbetine yönlendirme fonksiyonu eklemeniz gerekir
+                              await _loadGroupChat(g['id']);
+                              setState(() {
+                                _selectedGroupId = g['id'];
+                                _selectedUsername = null;
+                              });
+                            },
+                          ),
+                        )),
+                      if (!isLoading && userSuggestions.isEmpty && groupSuggestions.isEmpty && searchTerm.length >= 2)
+                        Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Text('Sonuç bulunamadı.', style: TextStyle(color: Colors.grey)),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ).then((_) {
+      dialogOpen = false;
+    });
+  }
+
+  Future<void> _startChatWithUser(String username) async {
+    try {
+      final token = await _tokenService.getToken();
+      if (token == null) throw Exception('Oturum bulunamadı');
+      final response = await _apiService.addChat(token, username);
+      if (response['success'] == true || response['success'] == null) {
+        // Sohbeti yükle ve ekrana getir
+        await _loadPersonalChat(username);
+        setState(() {
+          _selectedUsername = username;
+          _selectedGroupId = null;
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(response['message'] ?? 'Sohbet başlatılamadı')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Sohbet başlatılırken hata: $e')),
+      );
+    }
   }
 } 

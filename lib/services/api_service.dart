@@ -685,19 +685,129 @@ class ApiService {
 
   // Grup mesajı gönderme
   Future<Map<String, dynamic>> sendGroupMessage(String token, String groupId, String message, String senderUsername) async {
+  final response = await http.post(
+    Uri.parse('${ApiConfig.baseUrl}${ApiConfig.sendGroupMessage}'),
+    headers: ApiConfig.getHeaders(token),
+    body: jsonEncode({
+      'GroupId': groupId,
+      'Content': message,
+      'SenderUsername': senderUsername,
+      'FileUrl': '', // Dosya yoksa boş string gönder
+    }),
+  );
+  return _handleResponse(response);
+} 
+
+  // Okul gruplarını arama
+  Future<List<Map<String, dynamic>>> searchGroups(String token, String searchTerm) async {
     try {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.sendGroupMessage}'),
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/chat/search-groups?searchTerm=$searchTerm'),
         headers: ApiConfig.getHeaders(token),
-        body: jsonEncode({
-          'groupId': groupId,
-          'content': message,
-          'senderUsername': senderUsername,
-        }),
       );
-      return _handleResponse(response);
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((group) => Map<String, dynamic>.from(group)).toList();
+      } else {
+        throw Exception('Grup araması başarısız oldu');
+      }
     } catch (e) {
       throw Exception('${ApiConfig.networkError}: $e');
     }
   }
-} 
+
+  // Get user profile
+  Future<Map<String, dynamic>> getUserProfile(String token) async {
+    try {
+      print('Profil bilgileri yükleniyor...');
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.getProfile}'),
+        headers: ApiConfig.getHeaders(token),
+      );
+
+      print('Profil yanıtı alındı. Status: ${response.statusCode}');
+      print('Yanıt body: ${response.body}');
+
+      if (response.statusCode == ApiConfig.statusOk) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception('Profil bilgileri yüklenemedi');
+      }
+    } catch (e) {
+      print('Profil yüklenirken hata: $e');
+      throw Exception('${ApiConfig.networkError}: $e');
+    }
+  }
+
+  // Update user profile
+  Future<Map<String, dynamic>> updateProfile(String token, Map<String, dynamic> profileData) async {
+    try {
+      print('Profil güncelleniyor...');
+      print('Güncellenecek veriler: $profileData');
+
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/profile/update'),
+        headers: ApiConfig.getHeaders(token),
+        body: jsonEncode(profileData),
+      );
+
+      print('Profil güncelleme yanıtı alındı. Status: ${response.statusCode}');
+      print('Yanıt body: ${response.body}');
+
+      if (response.statusCode == ApiConfig.statusOk) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception('Profil güncellenemedi');
+      }
+    } catch (e) {
+      print('Profil güncellenirken hata: $e');
+      throw Exception('${ApiConfig.networkError}: $e');
+    }
+  }
+
+  // Get user's shared notes
+  Future<List<Note>> getUserSharedNotes(String token) async {
+    try {
+      print('Paylaşılan notlar yükleniyor...');
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/profile/shared-notes'),
+        headers: ApiConfig.getHeaders(token),
+      );
+
+      print('Paylaşılan notlar yanıtı alındı. Status: ${response.statusCode}');
+
+      if (response.statusCode == ApiConfig.statusOk) {
+        final List<dynamic> jsonData = jsonDecode(response.body);
+        return jsonData.map((noteJson) => Note.fromJson(noteJson as Map<String, dynamic>)).toList();
+      } else {
+        throw Exception('Paylaşılan notlar yüklenemedi');
+      }
+    } catch (e) {
+      print('Paylaşılan notlar yüklenirken hata: $e');
+      throw Exception('${ApiConfig.networkError}: $e');
+    }
+  }
+
+  // Get user's received notes
+  Future<List<Note>> getUserReceivedNotes(String token) async {
+    try {
+      print('Alınan notlar yükleniyor...');
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/profile/received-notes'),
+        headers: ApiConfig.getHeaders(token),
+      );
+
+      print('Alınan notlar yanıtı alındı. Status: ${response.statusCode}');
+
+      if (response.statusCode == ApiConfig.statusOk) {
+        final List<dynamic> jsonData = jsonDecode(response.body);
+        return jsonData.map((noteJson) => Note.fromJson(noteJson as Map<String, dynamic>)).toList();
+      } else {
+        throw Exception('Alınan notlar yüklenemedi');
+      }
+    } catch (e) {
+      print('Alınan notlar yüklenirken hata: $e');
+      throw Exception('${ApiConfig.networkError}: $e');
+    }
+  }
+}

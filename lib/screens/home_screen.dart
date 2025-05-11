@@ -7,6 +7,7 @@ import './chat_screen.dart';
 import './add_note_screen.dart';
 import './note_search_delegate.dart';
 import './note_detail_screen.dart';
+import './profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -176,7 +177,6 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.home_rounded),
             label: 'Ana Sayfa',
           ),
-        
           BottomNavigationBarItem(
             icon: Icon(Icons.chat_bubble_outline_rounded),
             label: 'Sohbet',
@@ -186,12 +186,28 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Profil',
           ),
         ],
-        onTap: (index) {
+        onTap: (index) async {
           if (index == 1) {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => const ChatScreen()),
             );
+          } else if (index == 2) {
+            final token = await _tokenService.getToken();
+            if (token != null && context.mounted) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ProfileScreen(token: token),
+                ),
+              );
+            } else {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.')),
+                );
+              }
+            }
           }
         },
       ),
