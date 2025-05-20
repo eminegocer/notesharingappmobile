@@ -19,6 +19,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isLoading = true;
   List<Chat> _personalChats = [];
   List<dynamic> _groupChats = [];
+  List<dynamic> _schoolGroups = [];
   List<dynamic>? _currentMessages;
   String? _selectedUsername;
   String? _selectedGroupId;
@@ -97,11 +98,13 @@ class _ChatScreenState extends State<ChatScreen> {
       }
 
       final personalChats = await _apiService.getPersonalChats(token);
-      final groupChats = await _apiService.getGroupChats(token);
+      final groupChats = await _apiService.getUserGroups(token);
+      final schoolGroups = await _apiService.getGroupChats(token);
 
       setState(() {
         _personalChats = personalChats;
         _groupChats = groupChats;
+        _schoolGroups = schoolGroups;
         _isLoading = false;
       });
     } catch (e) {
@@ -128,6 +131,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
       final chat = await _apiService.getChatHistory(token, username);
       print('Yüklenen sohbet: ${chat.messages.length} mesaj');
+      print('Mesajlar: \\n${chat.messages.map((m) => m.content).toList()}');
 
       setState(() {
         _currentMessages = chat.messages.map((msg) => {
@@ -147,6 +151,8 @@ class _ChatScreenState extends State<ChatScreen> {
         final dateB = DateTime.parse(b['createdAt']);
         return dateA.compareTo(dateB);
       });
+      print("_currentMessages: \\n");
+      print(_currentMessages);
     } catch (e) {
       print('Sohbet yüklenirken hata: $e');
       setState(() => _isChatLoading = false);
@@ -171,10 +177,20 @@ class _ChatScreenState extends State<ChatScreen> {
       }
 
       final messages = await _apiService.getGroupMessages(token, groupId);
+      print('Grup mesajları: \n$messages');
+      // Mesajları ekranda beklenen formata dönüştür
+      final formattedMessages = (messages as List).map((msg) => {
+        'senderUsername': msg['senderUsername'] ?? '',
+        'content': msg['content'] ?? '',
+        'createdAt': msg['createdAt']?.toString() ?? DateTime.now().toIso8601String(),
+      }).toList();
+
       setState(() {
-        _currentMessages = messages;
+        _currentMessages = formattedMessages;
         _isChatLoading = false;
       });
+      print('_currentMessages: \n');
+      print(_currentMessages);
     } catch (e) {
       setState(() => _isChatLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -248,10 +264,18 @@ class _ChatScreenState extends State<ChatScreen> {
         elevation: 0,
         backgroundColor: Colors.white,
         title: Text(
-          _selectedUsername != null 
-              ? _selectedUsername! 
-              : _selectedGroupId != null 
-                  ? _groupChats.firstWhere((g) => g['id'] == _selectedGroupId)['groupName'] 
+          _selectedUsername != null
+              ? _selectedUsername!
+              : _selectedGroupId != null
+                  ? (_groupChats.cast<Map>().firstWhere(
+                        (g) => g['id'] == _selectedGroupId,
+                        orElse: () => <String, dynamic>{},
+                      )['groupName'] ??
+                      _schoolGroups.cast<Map>().firstWhere(
+                        (g) => g['id'] == _selectedGroupId,
+                        orElse: () => <String, dynamic>{},
+                      )['groupName'] ??
+                      'SOHBETLER')
                   : 'SOHBETLER',
           style: GoogleFonts.poppins(
             color: mainTitleColor,
@@ -303,7 +327,7 @@ class _ChatScreenState extends State<ChatScreen> {
             title: 'Grup Sohbetleri',
             isExpanded: _isGroupChatsExpanded,
             onToggle: () => setState(() => _isGroupChatsExpanded = !_isGroupChatsExpanded),
-            chats: _groupChats.where((g) => g['type'] != 'school').toList(),
+            chats: _groupChats,
             isGroup: true,
             color: groupChatColor,
           ),
@@ -311,11 +335,11 @@ class _ChatScreenState extends State<ChatScreen> {
             title: 'Okul Toplulukları',
             isExpanded: _isSchoolChatsExpanded,
             onToggle: () => setState(() => _isSchoolChatsExpanded = !_isSchoolChatsExpanded),
-            chats: _groupChats.where((g) => g['type'] == 'school').toList(),
+            chats: _schoolGroups,
             isGroup: true,
             color: schoolChatColor,
           ),
-          if (_personalChats.isEmpty && _groupChats.isEmpty)
+          if (_personalChats.isEmpty && _groupChats.isEmpty && _schoolGroups.isEmpty)
             _buildEmptyState(),
         ],
       ),
@@ -326,9 +350,13 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_isChatLoading) {
       return const Center(child: CircularProgressIndicator());
     }
+    print('Ekranda gösterilecek _currentMessages:');
+    print(_currentMessages);
 
     return Column(
       children: [
+        Text('DEBUG: Mesaj sayısı:'),
+        Text(_currentMessages != null ? _currentMessages!.length.toString() : 'null'),
         Expanded(
           child: _currentMessages == null || _currentMessages!.isEmpty
             ? Center(
@@ -343,6 +371,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 itemCount: _currentMessages!.length,
                 itemBuilder: (context, index) {
                   final message = _currentMessages![_currentMessages!.length - 1 - index];
+                  print('Mesaj: $message');
                   final isMe = message['senderUsername'] == _currentUsername;
                   final color = getGrayColor(message['senderUsername'] ?? '');
                   return Align(
@@ -443,10 +472,10 @@ class _ChatScreenState extends State<ChatScreen> {
           onTap: onToggle,
           child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: mainTitleColor.withOpacity(0.07),
-              borderRadius: BorderRadius.circular(8),
+              color: Colors.blueGrey[50],
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -454,7 +483,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 Text(
                   title,
                   style: GoogleFonts.rubik(
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.bold,
                     color: mainTitleColor,
                     letterSpacing: 0.5,
@@ -463,113 +492,116 @@ class _ChatScreenState extends State<ChatScreen> {
                 Icon(
                   isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
                   color: mainTitleColor,
-                  size: 20,
+                  size: 22,
                 ),
               ],
             ),
           ),
         ),
         if (isExpanded)
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: chats.length,
-            itemBuilder: (context, index) {
-              final chat = chats[index];
-              if (isGroup) {
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: cardBackground,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: cardBorder, width: 1),
-                    boxShadow: [
-                      BoxShadow(
-                        color: cardShadow,
-                        blurRadius: 8,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    leading: CircleAvatar(
-                      radius: 18,
-                      backgroundColor: mainTitleColor.withOpacity(0.15),
-                      child: Icon(Icons.group, color: mainTitleColor, size: 18),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+            child: ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: chats.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 4),
+              itemBuilder: (context, index) {
+                final chat = chats[index];
+                if (isGroup) {
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.blueGrey.withOpacity(0.08),
+                          blurRadius: 10,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                      border: Border.all(color: Colors.blueGrey[100]!, width: 1),
                     ),
-                    title: Text(
-                      chat['groupName'] ?? 'Unnamed Group',
-                      style: GoogleFonts.nunito(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                        color: nameTextColor,
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      leading: CircleAvatar(
+                        radius: 18,
+                        backgroundColor: mainTitleColor.withOpacity(0.18),
+                        child: Icon(Icons.group, color: mainTitleColor, size: 20),
                       ),
-                    ),
-                    subtitle: Text(
-                      '${chat['memberCount'] ?? 0} üye',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.nunito(
-                        color: subtitleTextColor,
-                        fontSize: 12,
+                      title: Text(
+                        chat['groupName'] ?? 'Unnamed Group',
+                        style: GoogleFonts.nunito(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: nameTextColor,
+                        ),
                       ),
-                    ),
-                    onTap: () => _loadGroupChat(chat['id']),
-                  ),
-                );
-              } else {
-                final personalChat = chat as Chat;
-                final lastMessage = personalChat.messages.isNotEmpty 
-                  ? personalChat.messages.last.content 
-                  : 'Henüz mesaj yok';
-                final isMe = personalChat.messages.isNotEmpty && 
-                  personalChat.messages.last.senderUsername == _currentUsername;
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: cardBackground,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: cardBorder, width: 1),
-                    boxShadow: [
-                      BoxShadow(
-                        color: cardShadow,
-                        blurRadius: 8,
-                        offset: Offset(0, 2),
+                      subtitle: Text(
+                        '${chat['memberCount'] ?? 0} üye',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.nunito(
+                          color: Colors.grey[500],
+                          fontSize: 13,
+                        ),
                       ),
-                    ],
-                  ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    leading: CircleAvatar(
-                      radius: 18,
-                      backgroundColor: mainTitleColor.withOpacity(0.15),
-                      child: Icon(Icons.person, color: mainTitleColor, size: 18),
+                      onTap: () => _loadGroupChat(chat['id']),
                     ),
-                    title: Text(
-                      personalChat.receiverUsername,
-                      style: GoogleFonts.nunito(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                        color: nameTextColor,
+                  );
+                } else {
+                  final personalChat = chat as Chat;
+                  final lastMessage = personalChat.messages.isNotEmpty 
+                    ? personalChat.messages.last.content 
+                    : 'Henüz mesaj yok';
+                  final isMe = personalChat.messages.isNotEmpty && 
+                    personalChat.messages.last.senderUsername == _currentUsername;
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.blueGrey.withOpacity(0.08),
+                          blurRadius: 10,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                      border: Border.all(color: Colors.blueGrey[100]!, width: 1),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      leading: CircleAvatar(
+                        radius: 18,
+                        backgroundColor: mainTitleColor.withOpacity(0.18),
+                        child: Icon(Icons.person, color: mainTitleColor, size: 20),
                       ),
-                    ),
-                    subtitle: Text(
-                      lastMessage,
-                      style: GoogleFonts.nunito(
-                        fontStyle: isMe ? FontStyle.italic : FontStyle.normal,
-                        color: subtitleTextColor,
-                        fontSize: 12,
+                      title: Text(
+                        personalChat.receiverUsername,
+                        style: GoogleFonts.nunito(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: nameTextColor,
+                        ),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      subtitle: Text(
+                        lastMessage,
+                        style: GoogleFonts.nunito(
+                          fontStyle: isMe ? FontStyle.italic : FontStyle.normal,
+                          color: Colors.grey[500],
+                          fontSize: 13,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onTap: () => _loadPersonalChat(personalChat.receiverUsername),
                     ),
-                    onTap: () => _loadPersonalChat(personalChat.receiverUsername),
-                  ),
-                );
-              }
-            },
+                  );
+                }
+              },
+            ),
           ),
+        const SizedBox(height: 8),
       ],
     );
   }

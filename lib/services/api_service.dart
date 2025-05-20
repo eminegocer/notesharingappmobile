@@ -810,4 +810,23 @@ class ApiService {
       throw Exception('${ApiConfig.networkError}: $e');
     }
   }
+
+  // Kullanıcının dahil olduğu grup sohbetlerini (Groups koleksiyonu) getirme
+  Future<List<dynamic>> getUserGroups(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/chat/user-groups'),
+        headers: ApiConfig.getHeaders(token),
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> groups = json.decode(response.body);
+        return groups;
+      } else {
+        throw Exception('Grup sohbetleri alınamadı');
+      }
+    } catch (e) {
+      print('Grup sohbetleri alınırken hata: $e');
+      return [];
+    }
+  }
 }
