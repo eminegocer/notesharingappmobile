@@ -39,6 +39,10 @@ class ApiConfig {
   static const String sharedNotes = '/api/profile/shared-notes';
   static const String receivedNotes = '/api/profile/received-notes';
   
+  // Download endpoints
+  static const String trackDownload = '/NoteDownload/TrackDownload';
+  static const String getDownloadedNotes = '/NoteDownload/GetDownloadedNotes';
+  
   // HTTP Status Codes
   static const int statusOk = 200;
   static const int statusCreated = 201;

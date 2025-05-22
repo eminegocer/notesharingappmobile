@@ -8,6 +8,11 @@ import './add_note_screen.dart';
 import './note_search_delegate.dart';
 import './note_detail_screen.dart';
 import './profile_screen.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../config/api_config.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -313,7 +318,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 // Not kartını oluşturan widget
-class NoteCard extends StatelessWidget {
+class NoteCard extends StatefulWidget {
   final Note note;
   final String? searchTerm;
 
@@ -322,11 +327,20 @@ class NoteCard extends StatelessWidget {
     required this.note,
     this.searchTerm,
   });
-  // notun oluşturulma zamanı
+
+  @override
+  _NoteCardState createState() => _NoteCardState();
+}
+
+class _NoteCardState extends State<NoteCard> {
+  bool _isDownloading = false;
+  final ApiService _apiService = ApiService();
+  final TokenService _tokenService = TokenService();
+
   String _getTimeAgo() {
     final now = DateTime.now();
-    if (note.createdAt == null) return '?';
-    final difference = now.difference(note.createdAt!);
+    if (widget.note.createdAt == null) return '?';
+    final difference = now.difference(widget.note.createdAt!);
 
     if (difference.inMinutes < 1) {
       return 'şimdi';
@@ -338,7 +352,7 @@ class NoteCard extends StatelessWidget {
       return '${difference.inDays} gün önce';
     }
   }
- // Not kartının içeriğini oluşturan widget
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -347,19 +361,17 @@ class NoteCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
       ),
       child: InkWell(
-        // not kartına tıklandığında detay ekranına yönlendirir
         onTap: () async {
           final result = await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => NoteDetailScreen(
-                note: note,
-                searchTerm: searchTerm,
+                note: widget.note,
+                searchTerm: widget.searchTerm,
               ),
             ),
           );
 
-          // Eğer geri dönüş değeri bir arama terimi ise, o terimle aramayı yenile
           if (result != null && result is String) {
             if (context.mounted) {
               final homeState = context.findAncestorStateOfType<_HomeScreenState>();
@@ -376,7 +388,7 @@ class NoteCard extends StatelessWidget {
             ListTile(
               contentPadding: const EdgeInsets.all(16),
               title: Text(
-                note.title,
+                widget.note.title,
                 style: GoogleFonts.poppins(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -394,7 +406,7 @@ class NoteCard extends StatelessWidget {
                       radius: 14,
                       backgroundColor: const Color(0xFF6B7FD7),
                       child: Text(
-                        note.ownerUsername.isNotEmpty ? note.ownerUsername[0].toUpperCase() : '?',
+                        widget.note.ownerUsername.isNotEmpty ? widget.note.ownerUsername[0].toUpperCase() : '?',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
@@ -403,7 +415,7 @@ class NoteCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      note.ownerUsername.isNotEmpty ? note.ownerUsername : 'Bilinmeyen',
+                      widget.note.ownerUsername.isNotEmpty ? widget.note.ownerUsername : 'Bilinmeyen',
                       style: const TextStyle(
                         color: Colors.black54,
                         fontWeight: FontWeight.w500,
@@ -417,7 +429,7 @@ class NoteCard extends StatelessWidget {
                       _getTimeAgo(),
                       style: TextStyle(color: Colors.grey[600]),
                     ),
-                    if (note.category.isNotEmpty)
+                    if (widget.note.category.isNotEmpty)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
@@ -425,7 +437,7 @@ class NoteCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          note.category,
+                          widget.note.category,
                           style: const TextStyle(
                             color: Color(0xFF6B7FD7),
                             fontSize: 12,
@@ -437,11 +449,11 @@ class NoteCard extends StatelessWidget {
                 ),
               ),
             ),
-            if (note.content.isNotEmpty)
+            if (widget.note.content.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 child: Text(
-                  note.content,
+                  widget.note.content,
                   style: const TextStyle(
                     fontSize: 16,
                     color: Colors.black87,
@@ -450,7 +462,7 @@ class NoteCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-            if (note.pdfFilePath != null && note.pdfFilePath!.isNotEmpty)
+            if (widget.note.pdfFilePath != null && widget.note.pdfFilePath!.isNotEmpty)
               Container(
                 decoration: BoxDecoration(
                   color: Colors.grey[50],
@@ -461,14 +473,73 @@ class NoteCard extends StatelessWidget {
                 ),
                 child: ListTile(
                   leading: const Icon(Icons.picture_as_pdf, color: Color(0xFF6B7FD7)),
-                  title: Text('PDF Dosyası (${note.page} sayfa)'),
+                  title: Text('PDF Dosyası (${widget.note.page} sayfa)'),
                   trailing: IconButton(
-                    icon: const Icon(Icons.download_rounded, color: Color(0xFF6B7FD7)),
-                    onPressed: () {
-                      print('Download tıklandı: ${note.pdfFilePath}');
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('İndirme işlevi henüz eklenmedi.'))
-                      );
+                    icon: _isDownloading ?
+                          SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3,
+                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6B7FD7)),
+                            ),
+                          )
+                        : const Icon(Icons.download_rounded, color: Color(0xFF6B7FD7)),
+                    onPressed: _isDownloading ? null : () async {
+                      print('Download tıklandı: ${widget.note.pdfFilePath}');
+
+                      if (widget.note.pdfFilePath == null || widget.note.pdfFilePath!.isEmpty) {
+                         ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Bu not için PDF dosyası bulunamadı.'))
+                        );
+                        return;
+                      }
+
+                      setState(() {
+                        _isDownloading = true;
+                      });
+
+                      try {
+                        final token = await _tokenService.getToken();
+                        if (token == null) {
+                           ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Oturum bilgisi bulunamadı. Lütfen tekrar giriş yapın.'))
+                          );
+                           setState(() {
+                            _isDownloading = false;
+                          });
+                          return;
+                        }
+
+                        final String pdfUrl = '${ApiConfig.baseUrl}${widget.note.pdfFilePath}';
+                        // Extract file name from the URL
+                        final fileName = widget.note.pdfFilePath!.split('/').last;
+
+                        print('PDF indiriliyor: $pdfUrl');
+                        final localFilePath = await _apiService.downloadFile(pdfUrl, fileName, token);
+                        print('PDF indirildi, yerel yol: $localFilePath');
+
+                        // Open the downloaded file using url_launcher
+                        final fileUri = Uri.file(localFilePath);
+                         if (await canLaunchUrl(fileUri)) {
+                            await launchUrl(fileUri);
+                          } else {
+                           ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('İndirilen dosya açılamadı: $localFilePath'))
+                          );
+                           print('Hata: İndirilen dosya açılamadı: $localFilePath');
+                        }
+
+                      } catch (e) {
+                        print('İndirme veya açma hatası: $e');
+                         ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Dosya indirilirken bir hata oluştu: ${e.toString()}'))
+                        );
+                      } finally {
+                         setState(() {
+                          _isDownloading = false;
+                        });
+                      }
                     },
                   ),
                 ),

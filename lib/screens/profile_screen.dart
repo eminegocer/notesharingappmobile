@@ -16,11 +16,14 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   Map<String, dynamic>? profileData;
   bool isLoading = true;
+  List<Note> _downloadedNotes = [];
+  bool _isLoadingDownloadedNotes = true;
 
   @override
   void initState() {
     super.initState();
     fetchProfile();
+    fetchDownloadedNotes();
   }
 
   Future<void> fetchProfile() async {
@@ -38,6 +41,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Profil yüklenemedi: $e')),
       );
+    }
+  }
+
+  Future<void> fetchDownloadedNotes() async {
+    setState(() {
+      _isLoadingDownloadedNotes = true;
+    });
+    try {
+      final downloadedNotes = await ApiService().getDownloadedNotes(widget.token);
+      setState(() {
+        _downloadedNotes = downloadedNotes;
+      });
+    } catch (e) {
+      print('İndirilmiş notları yüklerken hata: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('İndirilmiş notlar yüklenemedi: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoadingDownloadedNotes = false;
+      });
     }
   }
 
@@ -196,7 +220,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   MaterialPageRoute(
                                     builder: (context) => NotesListScreen(
                                       title: 'Alınan Notlar',
-                                      notes: profileData?['receivedNotes'] ?? [],
+                                      notes: _downloadedNotes,
                                     ),
                                   ),
                                 );
@@ -212,7 +236,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       Icon(Icons.download_rounded, color: Colors.blue.shade400, size: 32),
                                       const SizedBox(height: 8),
                                       Text('Alınan Notlar', style: TextStyle(color: Colors.blue.shade700, fontWeight: FontWeight.bold)),
-                                      Text((profileData?['receivedNotes']?.length ?? 0).toString(), style: TextStyle(fontSize: 18, color: Colors.blue.shade900, fontWeight: FontWeight.bold)),
+                                      _isLoadingDownloadedNotes
+                                          ? SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                            )
+                                          : Text((_downloadedNotes.length ?? 0).toString(), style: TextStyle(fontSize: 18, color: Colors.blue.shade900, fontWeight: FontWeight.bold)),
                                     ],
                                   ),
                                 ),
