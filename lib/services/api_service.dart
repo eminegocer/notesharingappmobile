@@ -6,7 +6,6 @@ import '../config/api_config.dart';
 import '../models/note.dart';
 import '../models/chat.dart';
 import '../services/token_service.dart';
-import 'package:path_provider/path_provider.dart';
 
 class ApiService {
   final client = http.Client();
@@ -831,7 +830,6 @@ class ApiService {
     }
   }
 
-  // Yapay zeka ile not özetleme
   Future<String> summarizeNote(String token, String fileName) async {
     try {
       final response = await http.get(
@@ -848,78 +846,6 @@ class ApiService {
     } catch (e) {
       print('Özetleme sırasında hata: $e');
       throw Exception('${ApiConfig.networkError}: Özetleme sırasında hata oluştu.');
-    }
-  }
-
-  // Dosya indirme işlemi
-  Future<String> downloadFile(String url, String fileName, String token) async {
-    try {
-      final response = await client.get(
-        Uri.parse(url),
-        headers: ApiConfig.getHeaders(token),
-      );
-
-      if (response.statusCode == ApiConfig.statusOk) {
-        // Get the application directory for saving files
-        final directory = await getApplicationDocumentsDirectory();
-        final filePath = '${directory.path}/$fileName';
-        final file = File(filePath);
-
-        // Write the downloaded bytes to the file
-        await file.writeAsBytes(response.bodyBytes);
-
-        return filePath; // Return the local file path
-      } else {
-        throw Exception('Dosya indirilirken hata oluştu. Status: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Dosya indirme hatası: $e');
-      throw Exception('Dosya indirme hatası: $e');
-    }
-  }
-
-  // İndirilmiş notları getirme
-  Future<List<Note>> getDownloadedNotes(String token) async {
-    try {
-      print('ApiService - İndirilmiş notlar yükleniyor...');
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.getDownloadedNotes}'),
-        headers: ApiConfig.getHeaders(token),
-      );
-
-      print("ApiService - İndirilmiş notlar yanıtı alındı. Status: ${response.statusCode}");
-      print("ApiService - İndirilmiş notlar yanıt Body: ${response.body}"); // Yanıt body'sini yazdır
-
-      if (response.statusCode == ApiConfig.statusOk) {
-        final responseBody = jsonDecode(response.body);
-        final List<dynamic>? jsonData = responseBody['notes']; // 'notes' anahtarından veriyi al
-
-        print("ApiService - JSON verisi ('notes' altından): $jsonData"); // Ayrıştırılan JSON verisini yazdır
-
-        if (jsonData == null) {
-          print("ApiService - İndirilmiş notlar verisi boş veya null.");
-          return [];
-        }
-        // Backend'den gelen indirilmiş not objelerini Note modeline dönüştür
-        List<Note> downloadedNotes = jsonData.map((noteJson) {
-          try {
-            print("ApiService - Note parse edilmeye çalışılıyor: $noteJson"); // Parse edilecek notu yazdır
-            return Note.fromJson(noteJson as Map<String, dynamic>); // Parse edilecek notu yazdır
-          } catch (e) {
-            print("ApiService - Note parse edilirken hata: $e. Json data: $noteJson"); // Parse hatasını daha net yazdır
-            return null;
-          }
-        }).where((note) => note != null).cast<Note>().toList();
-
-        print("ApiService - Parse edilen not sayısı: ${downloadedNotes.length}"); // Parse edilen not sayısını yazdır
-        return downloadedNotes;
-      } else {
-        print('ApiService - İndirilmiş notlar yüklenemedi. Status: ${response.statusCode}, Body: ${response.body}');
-        throw Exception('İndirilmiş notlar yüklenirken hata oluştu. Status: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('ApiService - İndirilmiş notlar yüklenirken hata: $e');
-      throw Exception('${ApiConfig.networkError}: İndirilmiş notlar yüklenirken hata oluştu: $e');
     }
   }
 }
