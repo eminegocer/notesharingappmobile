@@ -4,6 +4,13 @@ import '../models/chat.dart';
 import '../services/api_service.dart';
 import '../services/token_service.dart';
 import 'dart:math';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter_pdfview/flutter_pdfview.dart';
+import 'package:http/http.dart' as http;
+import 'pdf_view_screen.dart';
+import '../config/api_config.dart';
+import 'package:file_picker/file_picker.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -130,7 +137,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
 
       final chat = await _apiService.getChatHistory(token, username);
-      print('Yüklenen sohbet: ${chat.messages.length} mesaj');
+      print('Yüklenen sohbet: \\${chat.messages.length} mesaj');
       print('Mesajlar: \\n${chat.messages.map((m) => m.content).toList()}');
 
       setState(() {
@@ -140,6 +147,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ? chat.receiverUsername
               : chat.senderUsername,
           'content': msg.content,
+          'fileUrl': msg.fileUrl,
           'createdAt': msg.createdAt.toIso8601String(),
         }).toList();
         _isChatLoading = false;
@@ -182,6 +190,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final formattedMessages = (messages as List).map((msg) => {
         'senderUsername': msg['senderUsername'] ?? '',
         'content': msg['content'] ?? '',
+        'fileUrl': msg['fileUrl'],
         'createdAt': msg['createdAt']?.toString() ?? DateTime.now().toIso8601String(),
       }).toList();
 
@@ -205,36 +214,39 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final token = await _tokenService.getToken();
       if (token == null) {
-        throw Exception('Oturum bilgisi bulunamadı');
+        // Oturum yoksa kullanıcıyı login ekranına yönlendir
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.')),
+        );
+        // TODO: Gerekirse Navigator.pushReplacement ile login ekranına yönlendirin
+        return;
       }
 
-      // Önce mevcut kullanıcı bilgilerini al
-      final userData = await _apiService.getCurrentUser(token);
-      if (userData == null || (userData['username'] == null && userData['userName'] == null)) {
-        throw Exception('Kullanıcı bilgileri alınamadı');
+      // Eğer _currentUsername zaten doluysa tekrar getCurrentUser çağırmaya gerek yok!
+      if (_currentUsername == null) {
+        final userData = await _apiService.getCurrentUser(token);
+        if (userData == null || (userData['username'] == null && userData['userName'] == null)) {
+          throw Exception('Kullanıcı bilgileri alınamadı');
+        }
+        setState(() {
+          _currentUsername = userData['username'] ?? userData['userName'];
+        });
       }
-
-      setState(() {
-        _currentUsername = userData['username'] ?? userData['userName'];
-      });
 
       if (_selectedUsername != null) {
-        // Önce sohbeti başlat
+        // Sohbet başlat
         final chatResponse = await _apiService.startChat(token, _selectedUsername!, _messageController.text);
         if (chatResponse['success'] == false) {
           throw Exception(chatResponse['message'] ?? 'Sohbet başlatılamadı');
         }
 
-        // Sonra mesajı gönder
+        // Mesajı gönder
         final messageResponse = await _apiService.sendMessage(token, _selectedUsername!, _messageController.text);
         if (messageResponse['success'] == false) {
           throw Exception(messageResponse['message'] ?? 'Mesaj gönderilemedi');
         }
-        
-        // Mesaj gönderildikten sonra sohbeti yenile
         await _loadPersonalChat(_selectedUsername!);
       } else if (_selectedGroupId != null) {
-        // Grup mesajı gönderme
         final messageResponse = await _apiService.sendGroupMessage(token, _selectedGroupId!, _messageController.text, _currentUsername!);
         if (messageResponse['success'] == false) {
           throw Exception(messageResponse['message'] ?? 'Grup mesajı gönderilemedi');
@@ -253,6 +265,48 @@ class _ChatScreenState extends State<ChatScreen> {
           backgroundColor: Colors.red,
         ),
       );
+      // Eğer hata oturumla ilgiliyse login ekranına yönlendirin
+      if (e.toString().contains('Unauthorized') || e.toString().contains('Oturum')) {
+        // TODO: Kullanıcıyı login ekranına yönlendirin
+      }
+    }
+  }
+
+  Future<void> _pickAndSendFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
+    );
+    if (result != null && result.files.single.path != null) {
+      final file = File(result.files.single.path!);
+      final fileName = result.files.single.name;
+      final token = await _tokenService.getToken();
+      if (token == null) return;
+
+      try {
+        // Dosyayı backend'e yükle
+        final uploadResponse = await _apiService.uploadChatFile(
+          token,
+          await file.readAsBytes(),
+          fileName,
+        );
+        final fileUrl = uploadResponse['fileUrl'] ?? uploadResponse['url'] ?? uploadResponse['path'];
+        if (fileUrl != null) {
+          // Sohbete dosya mesajı gönder
+          String messageText = '[Dosya] $fileName';
+          if (_selectedUsername != null) {
+            await _apiService.sendMessage(token, _selectedUsername!, messageText, fileUrl: fileUrl);
+            await _loadPersonalChat(_selectedUsername!);
+          } else if (_selectedGroupId != null) {
+            await _apiService.sendGroupMessage(token, _selectedGroupId!, messageText, _currentUsername!, fileUrl: fileUrl);
+            await _loadGroupChat(_selectedGroupId!);
+          }
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Dosya gönderilemedi: $e')),
+        );
+      }
     }
   }
 
@@ -311,52 +365,302 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildChatList() {
-    return RefreshIndicator(
-      onRefresh: _loadChats,
-      child: ListView(
-        children: [
-          _buildCollapsibleSection(
-            title: 'Kişisel Sohbetler',
-            isExpanded: _isPersonalChatsExpanded,
-            onToggle: () => setState(() => _isPersonalChatsExpanded = !_isPersonalChatsExpanded),
-            chats: _personalChats,
-            isGroup: false,
-            color: personalChatColor,
-          ),
-          _buildCollapsibleSection(
-            title: 'Grup Sohbetleri',
-            isExpanded: _isGroupChatsExpanded,
-            onToggle: () => setState(() => _isGroupChatsExpanded = !_isGroupChatsExpanded),
-            chats: _groupChats,
-            isGroup: true,
-            color: groupChatColor,
-          ),
-          _buildCollapsibleSection(
-            title: 'Okul Toplulukları',
-            isExpanded: _isSchoolChatsExpanded,
-            onToggle: () => setState(() => _isSchoolChatsExpanded = !_isSchoolChatsExpanded),
-            chats: _schoolGroups,
-            isGroup: true,
-            color: schoolChatColor,
-          ),
-          if (_personalChats.isEmpty && _groupChats.isEmpty && _schoolGroups.isEmpty)
-            _buildEmptyState(),
-        ],
+    final List<Map<String, dynamic>> categories = [
+      {
+        "title": "Kişisel Sohbetler",
+        "icon": Icons.person,
+        "desc": "1'e 1 özel konuşmalarınızı görün",
+        "color": Colors.white,
+        "chats": _personalChats,
+        "isGroup": false,
+      },
+      {
+        "title": "Grup Sohbetleri",
+        "icon": Icons.groups,
+        "desc": "Grup konuşmalarınızı görün",
+        "color": Colors.white,
+        "chats": _groupChats,
+        "isGroup": true,
+      },
+      {
+        "title": "Okul Toplulukları",
+        "icon": Icons.school,
+        "desc": "Okul toplulukları sohbetlerini görün",
+        "color": Colors.white,
+        "chats": _schoolGroups,
+        "isGroup": true,
+      },
+    ];
+
+    return Container(
+      color: const Color(0xFFE6EEFF),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
+        child: Column(
+          children: [
+            for (final Map<String, dynamic> cat in categories)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: GestureDetector(
+                  onTap: () {
+                    _showCategoryChatsModal(
+                      context,
+                      cat['title'] as String,
+                      cat['chats'] as List,
+                      cat['isGroup'] as bool,
+                    );
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: cat['color'] as Color,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: const Color(0xFF6B7FD7).withOpacity(0.13),
+                            radius: 22,
+                            child: Icon(cat['icon'] as IconData, size: 24, color: const Color(0xFF6B7FD7)),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  cat['title'] as String,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: Color(0xFF222B45),
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  cat['desc'] as String,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF6B7FD7),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.arrow_forward_ios, color: Color(0xFFB0B0B0), size: 18),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            if (_personalChats.isEmpty && _groupChats.isEmpty && _schoolGroups.isEmpty)
+              _buildEmptyState(),
+          ],
+        ),
       ),
     );
+  }
+
+  void _showCategoryChatsModal(BuildContext context, String title, List chats, bool isGroup) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      backgroundColor: Colors.white,
+      builder: (context) {
+        return SizedBox(
+          height: 400,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(
+                  title,
+                  style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold, color: mainTitleColor),
+                ),
+              ),
+              Expanded(
+                child: chats.isEmpty
+                    ? Center(child: Text('Hiç sohbet yok.', style: TextStyle(color: Colors.grey[600])))
+                    : ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: chats.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 16),
+                        itemBuilder: (context, index) {
+                          final chat = chats[index];
+                          return GestureDetector(
+                            onTap: () {
+                              if (isGroup) {
+                                final groupId = chat['id'];
+                                print('Seçilen grup ID: $groupId');
+                                Navigator.pop(context);
+                                _loadGroupChat(groupId);
+                                setState(() {
+                                  _selectedGroupId = groupId;
+                                  _selectedUsername = null;
+                                });
+                              } else {
+                                final username = chat is Chat ? chat.receiverUsername : (chat['receiverUsername'] ?? chat['username'] ?? '-');
+                                Navigator.pop(context);
+                                _loadPersonalChat(username);
+                                setState(() {
+                                  _selectedUsername = username;
+                                  _selectedGroupId = null;
+                                });
+                              }
+                            },
+                            child: _buildChatCard(chat, isGroup),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildChatCard(dynamic chat, bool isGroup) {
+    String title = '';
+    String subtitle = '';
+    IconData icon = isGroup ? Icons.group : Icons.person;
+    Color iconBg = mainTitleColor.withOpacity(0.12);
+    if (isGroup) {
+      title = chat['groupName'] ?? chat['name'] ?? '-';
+      subtitle = (chat['members']?.length?.toString() ?? chat['memberCount']?.toString() ?? '0') + ' üye';
+      // Okul toplulukları için farklı ikonlar
+      if ((title.toLowerCase().contains('bilgisayar') || title.toLowerCase().contains('yazılım'))) {
+        icon = Icons.computer;
+      } else if (title.toLowerCase().contains('elektrik')) {
+        icon = Icons.electrical_services;
+      } else if (title.toLowerCase().contains('makine')) {
+        icon = Icons.precision_manufacturing;
+      } else if (title.toLowerCase().contains('kimya')) {
+        icon = Icons.science;
+      } else if (title.toLowerCase().contains('matematik')) {
+        icon = Icons.calculate;
+      } else if (title.toLowerCase().contains('tıp')) {
+        icon = Icons.local_hospital;
+      } else if (title.toLowerCase().contains('hukuk')) {
+        icon = Icons.gavel;
+      } else if (title.toLowerCase().contains('edebiyat')) {
+        icon = Icons.menu_book;
+      } else if (title.toLowerCase().contains('fizik')) {
+        icon = Icons.science;
+      } else {
+        icon = Icons.school;
+      }
+      iconBg = const Color(0xFF6B7FD7).withOpacity(0.13);
+    } else {
+      title = chat is Chat ? chat.receiverUsername : (chat['receiverUsername'] ?? chat['username'] ?? '-');
+      subtitle = chat is Chat && chat.messages.isNotEmpty ? chat.messages.last.content : (chat['lastMessage'] ?? '');
+      iconBg = const Color(0xFF6B7FD7).withOpacity(0.13);
+    }
+    return GestureDetector(
+      onTap: () {
+        if (isGroup) {
+          final groupId = chat['id'];
+          print('Seçilen grup ID: $groupId');
+          _loadGroupChat(groupId);
+          setState(() {
+            _selectedGroupId = groupId;
+            _selectedUsername = null;
+          });
+        } else {
+          final username = chat is Chat ? chat.receiverUsername : (chat['receiverUsername'] ?? chat['username'] ?? '-');
+          _loadPersonalChat(username);
+          setState(() {
+            _selectedUsername = username;
+            _selectedGroupId = null;
+          });
+        }
+      },
+      child: Container(
+        width: 150,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFF6B7FD7), width: 1.3),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            isGroup
+                ? CircleAvatar(
+                    backgroundColor: iconBg,
+                    child: Icon(icon, color: mainTitleColor, size: 22),
+                    radius: 20,
+                  )
+                : CircleAvatar(
+                    backgroundColor: iconBg,
+                    child: Text(
+                      title.isNotEmpty ? title[0].toUpperCase() : '?',
+                      style: const TextStyle(color: Color(0xFF6B7FD7), fontWeight: FontWeight.bold, fontSize: 18),
+                    ),
+                    radius: 20,
+                  ),
+            const SizedBox(height: 10),
+            Text(
+              title,
+              style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14, color: nameTextColor),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(color: subtitleTextColor, fontSize: 12),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<String> _downloadAndSavePdf(String url) async {
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode == 200) {
+      final bytes = response.bodyBytes;
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/${DateTime.now().millisecondsSinceEpoch}.pdf');
+      await file.writeAsBytes(bytes);
+      return file.path;
+    } else {
+      throw Exception('PDF indirilemedi');
+    }
   }
 
   Widget _buildChatView() {
     if (_isChatLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    print('Ekranda gösterilecek _currentMessages:');
-    print(_currentMessages);
-
     return Column(
       children: [
-        Text('DEBUG: Mesaj sayısı:'),
-        Text(_currentMessages != null ? _currentMessages!.length.toString() : 'null'),
         Expanded(
           child: _currentMessages == null || _currentMessages!.isEmpty
             ? Center(
@@ -371,9 +675,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 itemCount: _currentMessages!.length,
                 itemBuilder: (context, index) {
                   final message = _currentMessages![_currentMessages!.length - 1 - index];
-                  print('Mesaj: $message');
                   final isMe = message['senderUsername'] == _currentUsername;
                   final color = getGrayColor(message['senderUsername'] ?? '');
+                  final fileUrl = message['fileUrl'];
                   return Align(
                     alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
                     child: Container(
@@ -407,13 +711,65 @@ class _ChatScreenState extends State<ChatScreen> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                          Text(
-                            message['content'],
-                            style: GoogleFonts.nunito(
-                              color: isMe ? Color(0xFF444444) : Color(0xFF444444),
-                              fontSize: 15,
+                          if (fileUrl != null && fileUrl.toString().isNotEmpty) ...[
+                            GestureDetector(
+                              onTap: () async {
+                                try {
+                                  final fullUrl = fileUrl.toString().startsWith('http')
+                                      ? fileUrl
+                                      : ApiConfig.baseUrl + fileUrl.toString();
+                                  final pdfPath = await _downloadAndSavePdf(fullUrl);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => PdfViewScreen(
+                                        pdfPath: pdfPath,
+                                        title: 'PDF Mesajı',
+                                      ),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('PDF açılırken hata: $e')),
+                                  );
+                                }
+                              },
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.picture_as_pdf, color: Colors.red, size: 28),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    getOriginalFileName(fileUrl.toString()),
+                                    style: GoogleFonts.nunito(
+                                      color: Colors.blue,
+                                      fontSize: 15,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
+                            if (message['content'] != null && message['content'].toString().isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6.0),
+                                child: Text(
+                                  message['content'],
+                                  style: GoogleFonts.nunito(
+                                    color: isMe ? Color(0xFF444444) : Color(0xFF444444),
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ),
+                          ] else ...[
+                            Text(
+                              message['content'],
+                              style: GoogleFonts.nunito(
+                                color: isMe ? Color(0xFF444444) : Color(0xFF444444),
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -426,6 +782,10 @@ class _ChatScreenState extends State<ChatScreen> {
           color: Colors.white,
           child: Row(
             children: [
+              IconButton(
+                icon: const Icon(Icons.attach_file, color: Color(0xFF6B7FD7)),
+                onPressed: _pickAndSendFile,
+              ),
               Expanded(
                 child: TextField(
                   controller: _messageController,
@@ -453,155 +813,6 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _buildCollapsibleSection({
-    required String title,
-    required bool isExpanded,
-    required VoidCallback onToggle,
-    required List<dynamic> chats,
-    required bool isGroup,
-    required Color color,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
-          onTap: onToggle,
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.blueGrey[50],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.rubik(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: mainTitleColor,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                Icon(
-                  isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                  color: mainTitleColor,
-                  size: 22,
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (isExpanded)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-            child: ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: chats.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 4),
-              itemBuilder: (context, index) {
-                final chat = chats[index];
-                if (isGroup) {
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.blueGrey.withOpacity(0.08),
-                          blurRadius: 10,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
-                      border: Border.all(color: Colors.blueGrey[100]!, width: 1),
-                    ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      leading: CircleAvatar(
-                        radius: 18,
-                        backgroundColor: mainTitleColor.withOpacity(0.18),
-                        child: Icon(Icons.group, color: mainTitleColor, size: 20),
-                      ),
-                      title: Text(
-                        chat['groupName'] ?? 'Unnamed Group',
-                        style: GoogleFonts.nunito(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: nameTextColor,
-                        ),
-                      ),
-                      subtitle: Text(
-                        '${chat['memberCount'] ?? 0} üye',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.nunito(
-                          color: Colors.grey[500],
-                          fontSize: 13,
-                        ),
-                      ),
-                      onTap: () => _loadGroupChat(chat['id']),
-                    ),
-                  );
-                } else {
-                  final personalChat = chat as Chat;
-                  final lastMessage = personalChat.messages.isNotEmpty 
-                    ? personalChat.messages.last.content 
-                    : 'Henüz mesaj yok';
-                  final isMe = personalChat.messages.isNotEmpty && 
-                    personalChat.messages.last.senderUsername == _currentUsername;
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.blueGrey.withOpacity(0.08),
-                          blurRadius: 10,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
-                      border: Border.all(color: Colors.blueGrey[100]!, width: 1),
-                    ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      leading: CircleAvatar(
-                        radius: 18,
-                        backgroundColor: mainTitleColor.withOpacity(0.18),
-                        child: Icon(Icons.person, color: mainTitleColor, size: 20),
-                      ),
-                      title: Text(
-                        personalChat.receiverUsername,
-                        style: GoogleFonts.nunito(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: nameTextColor,
-                        ),
-                      ),
-                      subtitle: Text(
-                        lastMessage,
-                        style: GoogleFonts.nunito(
-                          fontStyle: isMe ? FontStyle.italic : FontStyle.normal,
-                          color: Colors.grey[500],
-                          fontSize: 13,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      onTap: () => _loadPersonalChat(personalChat.receiverUsername),
-                    ),
-                  );
-                }
-              },
-            ),
-          ),
-        const SizedBox(height: 8),
       ],
     );
   }
@@ -852,5 +1063,13 @@ class _ChatScreenState extends State<ChatScreen> {
         SnackBar(content: Text('Sohbet başlatılırken hata: $e')),
       );
     }
+  }
+
+  String getOriginalFileName(String fileUrl) {
+    final parts = fileUrl.split('_');
+    if (parts.length > 1) {
+      return parts.sublist(1).join('_');
+    }
+    return fileUrl.split('/').last;
   }
 } 

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/note.dart';
 import '../services/api_service.dart';
 import '../services/token_service.dart';
-import 'home_screen.dart'; // NoteCard'ı kullanmak için
+import './home_screen.dart'; // NoteCard'ı kullanmak için
 
 // SearchDelegate<String?>: Kullanıcı aramayı tamamladığında veya iptal ettiğinde.
 class NoteSearchDelegate extends SearchDelegate<String?> {
@@ -68,49 +68,70 @@ class NoteSearchDelegate extends SearchDelegate<String?> {
 
    // Önerileri/Sonuçları listelemek için yardımcı widget
    Widget _buildSuggestionList() {
-      // Kullanıcıya arama yapması için bir ipucu ve sonuçları gösterelim.
       return FutureBuilder<List<Note>>(
-         future: _fetchSuggestionsOnDemand(query), // Sonuçları getirir
+         future: _fetchSuggestionsOnDemand(query),
          builder: (context, snapshot) {
             if (query.isEmpty) return _buildEmptySuggestions();
-
-            // Yükleniyor durumu (sadece sorgu değiştiyse ve son arama değilse)
             if (snapshot.connectionState == ConnectionState.waiting && query != _lastSearchTerm) {
-               return const Center(child: CircularProgressIndicator());
+               return const Center(
+                 child: Column(
+                   mainAxisAlignment: MainAxisAlignment.center,
+                   children: [
+                     CircularProgressIndicator(),
+                     SizedBox(height: 16),
+                     Text('Aranıyor...'),
+                   ],
+                 ),
+               );
             }
-            // Hata durumu
             if (snapshot.hasError) {
-               return Center(child: Text('Arama sırasında hata: ${snapshot.error}'));
+               return Center(
+                 child: Column(
+                   mainAxisAlignment: MainAxisAlignment.center,
+                   children: [
+                     Icon(Icons.error_outline, color: Colors.red, size: 48),
+                     SizedBox(height: 16),
+                     Text('Arama sırasında hata oluştu:'),
+                     Text(snapshot.error.toString(), textAlign: TextAlign.center),
+                     SizedBox(height: 16),
+                     ElevatedButton.icon(
+                       icon: Icon(Icons.refresh),
+                       label: Text('Tekrar Dene'),
+                       onPressed: () {
+                         _suggestions = null;
+                         _lastSearchTerm = null;
+                         showSuggestions(context);
+                       },
+                     ),
+                   ],
+                 ),
+               );
             }
-            // Sonuç yok durumu
-             if (!snapshot.hasData || snapshot.data!.isEmpty) {
-               return Center(child: Text('"$query" için sonuç bulunamadı.'));
+            if (!snapshot.hasData || snapshot.data!.isEmpty) {
+               return Center(
+                 child: Column(
+                   mainAxisAlignment: MainAxisAlignment.center,
+                   children: [
+                     Icon(Icons.search_off_rounded, color: Colors.grey, size: 48),
+                     SizedBox(height: 16),
+                     Text('"$query" için sonuç bulunamadı.'),
+                     SizedBox(height: 8),
+                     Text('Farklı bir terimle aramayı deneyin.'),
+                   ],
+                 ),
+               );
             }
-
-            // Başarılı sonuç durumu
             final results = snapshot.data!;
-            _suggestions = results; // Sonuçları öneri olarak sakla
-             _lastSearchTerm = query; // Son başarılı aramayı kaydet
-
-            // Sonuçları liste olarak göster
+            _suggestions = results;
+            _lastSearchTerm = query;
             return ListView.builder(
+              padding: const EdgeInsets.all(16),
               itemCount: results.length,
               itemBuilder: (context, index) {
                 final note = results[index];
-                // Sonuçları tıklanabilir yapıp delegate'i kapatabiliriz
-                return ListTile(
-                   leading: Icon(Icons.note_outlined), // Daha uygun bir ikon
-                   title: Text(note.title),
-                   subtitle: Text(
-                      note.content, // İçeriği gösterelim
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis
-                   ),
-                   onTap: () {
-                      // Tıklanan öneriyle aramayı tamamla
-                      query = note.title; // Tıklanan notun başlığını sorgu yap (isteğe bağlı)
-                      close(context, query.trim()); // Delegate'i kapat ve terimi döndür
-                   },
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: NoteCard(note: note, searchTerm: query),
                 );
               },
             );

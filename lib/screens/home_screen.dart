@@ -1,16 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/note.dart';
+import '../models/user.dart';
 import '../services/api_service.dart';
 import '../services/token_service.dart';
+import '../widgets/recently_visited_notes_section.dart';
 import './chat_screen.dart';
 import './add_note_screen.dart';
 import './note_search_delegate.dart';
 import './note_detail_screen.dart';
 import './profile_screen.dart';
+import './category_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final String? selectedCategory;
+
+  const HomeScreen({
+    super.key,
+    this.selectedCategory,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -24,11 +32,13 @@ class _HomeScreenState extends State<HomeScreen> {
   final _refreshKey = GlobalKey<RefreshIndicatorState>();
   final _apiService = ApiService();
   final _tokenService = TokenService();
+  List<VisitedNote> _visitedNotes = [];
 
   @override
   void initState() {
     super.initState();
     _loadNotes();
+    _loadVisitedNotes();
   }
 
   Future<void> _loadNotes({String? searchTerm}) async {
@@ -48,13 +58,14 @@ class _HomeScreenState extends State<HomeScreen> {
       if (token == null) {
         throw Exception('Oturum bilgisi bulunamadı. Lütfen tekrar giriş yapın.');
       }
-      // searchTerm null değilse arama yapar ve ugyun notları yükler null ise tüm notları yükler
+
       List<Note> fetchedNotes;
-      if (searchTerm != null && searchTerm.isNotEmpty) {
-        print('Aranıyor: "$searchTerm"');
+      if (widget.selectedCategory != null) {
+        // Kategoriye göre notları çek
+        fetchedNotes = await _apiService.getNotesByCategory(token, widget.selectedCategory!);
+      } else if (searchTerm != null && searchTerm.isNotEmpty) {
         fetchedNotes = await _apiService.searchNotes(token, searchTerm);
       } else {
-        print('Tüm notlar yükleniyor');
         fetchedNotes = await _apiService.getNotes(token);
       }
 
@@ -85,33 +96,46 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
-  // ekranı yenileme işlemi için kullanılan fonksiyon
+
+  Future<void> _loadVisitedNotes() async {
+    print('visited notes güncelleniyor...');
+    try {
+      final token = await _tokenService.getToken();
+      if (token == null) return;
+      await Future.delayed(Duration(milliseconds: 500));
+      final notes = await _apiService.getVisitedNotes(token);
+      setState(() {
+        _visitedNotes = notes;
+      });
+      print('visited notes güncellendi: [32m${_visitedNotes.length}[0m');
+    } catch (e) {
+      print('Son ziyaret edilen notlar yüklenirken hata: $e');
+    }
+  }
+
   Future<void> _handleRefresh() async {
     await _loadNotes();
   }
 
- // ekranın nasıl görüneceğini belirleyen widget
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
-      // uygulamanın üst kısmında bulunan çubuk
-      // Arama butonu ve bildirim butonunu içerir
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.white,
-        leading: _currentSearchTerm != null && _currentSearchTerm!.isNotEmpty
-        // Arama ekranında geri butonu gösterir
-          ? IconButton(
-              icon: const Icon(Icons.arrow_back, color: Color(0xFF6B7FD7)),
-              onPressed: () => _loadNotes(),
-            )
-          : null,
-          // uygulamanın başlığı
+        leading: widget.selectedCategory != null
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back, color: Color(0xFF6B7FD7)),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
         title: Text(
           _currentSearchTerm != null && _currentSearchTerm!.isNotEmpty
               ? 'ARAMA SONUÇLARI'
-              : 'NOTLARIM',
+              : widget.selectedCategory != null
+                  ? widget.selectedCategory!.toUpperCase()
+                  : 'NOTLARIM',
           style: GoogleFonts.poppins(
             color: const Color(0xFF6B7FD7),
             fontWeight: FontWeight.bold,
@@ -119,7 +143,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         actions: [
-          // Arama butonu, tıklandığında notları  arama ekranını açar
           IconButton(
             icon: const Icon(Icons.search_rounded, color: Color(0xFF6B7FD7)),
             tooltip: 'Not Ara',
@@ -136,7 +159,6 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             },
           ),
-          // Bildirim butonu, tıklandığında bildirim ekranını açar
           IconButton(
             icon: const Icon(Icons.notifications_outlined, color: Color(0xFF6B7FD7)),
             onPressed: () {
@@ -145,14 +167,21 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      // Ekranın gövdesi, notları listeleyen bir widget içerir
-      body: RefreshIndicator(
-        key: _refreshKey,
-        onRefresh: _handleRefresh,
-        color: const Color(0xFF6B7FD7),
-        child: _buildBody(),
+      body: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          TopDownloadedNotesSection(notes: []),
+          if (widget.selectedCategory == null)
+            RecentlyVisitedNotesSection(
+              notes: _visitedNotes,
+              onRefresh: _loadVisitedNotes,
+            ),
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: _buildBody(),
+          ),
+        ],
       ),
-      // Yeni not eklemek için kullanılan buton
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           final result = await Navigator.push(
@@ -167,9 +196,8 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: const Color(0xFF6B7FD7),
         child: const Icon(Icons.add_rounded),
       ),
-      // alt navigasyon çubuğu, tıklandığında ilgili ekranı açar
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: 0,
+        currentIndex: 1,
         selectedItemColor: const Color(0xFF6B7FD7),
         unselectedItemColor: Colors.grey,
         items: const [
@@ -187,7 +215,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
         onTap: (index) async {
-          if (index == 1) {
+          if (index == 0) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const CategoryScreen()),
+            );
+          } else if (index == 1) {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => const ChatScreen()),
@@ -213,8 +246,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  // Notlar ekranının gövdesini oluşturan widget
-  // Notlar yüklendiğinde, hata oluştuğunda veya not yoksa uygun mesajları gösterir
+
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(
@@ -231,17 +263,20 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.error_outline, color: Colors.red, size: 60),
-              SizedBox(height: 16),
-              Text('Hata Oluştu', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              SizedBox(height: 8),
+              const Icon(Icons.error_outline, color: Colors.red, size: 60),
+              const SizedBox(height: 16),
+              const Text('Hata Oluştu', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
               Text(_errorMessage!, textAlign: TextAlign.center),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               ElevatedButton.icon(
-                icon: Icon(Icons.refresh),
-                label: Text('Tekrar Dene'),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Tekrar Dene'),
                 onPressed: () => _loadNotes(searchTerm: _currentSearchTerm),
-                style: ElevatedButton.styleFrom(backgroundColor: Color(0xFF6B7FD7), foregroundColor: Colors.white),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6B7FD7),
+                  foregroundColor: Colors.white,
+                ),
               )
             ],
           ),
@@ -256,16 +291,18 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Icon(
               _currentSearchTerm != null && _currentSearchTerm!.isNotEmpty
-                ? Icons.search_off_rounded
-                : Icons.note_alt_outlined,
+                  ? Icons.search_off_rounded
+                  : Icons.note_alt_outlined,
               size: 80,
               color: Colors.grey[400],
             ),
             const SizedBox(height: 16),
             Text(
               _currentSearchTerm != null && _currentSearchTerm!.isNotEmpty
-                ? 'Arama Sonucu Bulunamadı'
-                : 'Henüz Not Eklenmemiş',
+                  ? 'Arama Sonucu Bulunamadı'
+                  : widget.selectedCategory != null
+                      ? 'Bu kategoride henüz not yok'
+                      : 'Henüz Not Eklenmemiş',
               style: TextStyle(
                 fontSize: 18,
                 color: Colors.grey[600],
@@ -275,8 +312,10 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 8),
             Text(
               _currentSearchTerm != null && _currentSearchTerm!.isNotEmpty
-                ? 'Farklı bir terimle aramayı deneyin.'
-                : 'Yeni bir not eklemek için + butonuna basın',
+                  ? 'Farklı bir terimle aramayı deneyin.'
+                  : widget.selectedCategory != null
+                      ? 'Bu kategoriye not eklemek için + butonuna basın'
+                      : 'Yeni bir not eklemek için + butonuna basın',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey[500],
@@ -287,18 +326,23 @@ class _HomeScreenState extends State<HomeScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 16.0),
                 child: ElevatedButton.icon(
-                  icon: Icon(Icons.clear_all),
-                  label: Text('Tüm Notları Göster'),
+                  icon: const Icon(Icons.clear_all),
+                  label: const Text('Tüm Notları Göster'),
                   onPressed: () => _loadNotes(),
-                  style: ElevatedButton.styleFrom(backgroundColor: Color(0xFF6B7FD7), foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF6B7FD7),
+                    foregroundColor: Colors.white,
+                  ),
                 ),
               ),
           ],
         ),
       );
     }
-    // Notlar yüklendiğinde, notları listeleyen bir widget döner
+
     return ListView.builder(
+      shrinkWrap: true,
+      physics: NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       itemCount: _notes.length,
       itemBuilder: (context, index) {
@@ -347,24 +391,63 @@ class NoteCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
       ),
       child: InkWell(
-        // not kartına tıklandığında detay ekranına yönlendirir
         onTap: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => NoteDetailScreen(
-                note: note,
-                searchTerm: searchTerm,
-              ),
-            ),
-          );
+          print('Not kartına tıklandı, noteId: \\${note.noteId}, note: \\${note.toString()}');
+          final token = await TokenService().getToken();
+          if (token != null && note.noteId != null) {
+            try {
+              // Önce ziyaret kaydını oluştur
+              await ApiService().trackNoteView(token, note.noteId!);
+              
+              // Son ziyaret edilen notları hemen güncelle
+              if (context.mounted) {
+                final homeState = context.findAncestorStateOfType<_HomeScreenState>();
+                if (homeState != null) {
+                  await homeState._loadVisitedNotes();
+                }
+              }
+              
+              // Sonra detay sayfasına git
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => NoteDetailScreen(
+                    note: note,
+                    searchTerm: searchTerm,
+                  ),
+                ),
+              );
 
-          // Eğer geri dönüş değeri bir arama terimi ise, o terimle aramayı yenile
-          if (result != null && result is String) {
-            if (context.mounted) {
-              final homeState = context.findAncestorStateOfType<_HomeScreenState>();
-              if (homeState != null) {
-                homeState._loadNotes(searchTerm: result);
+              // Detaydan dönünce son ziyaret edilen notları tekrar güncelle
+              if (context.mounted) {
+                final homeState = context.findAncestorStateOfType<_HomeScreenState>();
+                if (homeState != null) {
+                  await homeState._loadVisitedNotes();
+                }
+              }
+
+              // Eğer geri dönüş değeri bir arama terimi ise, o terimle aramayı yenile
+              if (result != null && result is String) {
+                if (context.mounted) {
+                  final homeState = context.findAncestorStateOfType<_HomeScreenState>();
+                  if (homeState != null) {
+                    homeState._loadNotes(searchTerm: result);
+                  }
+                }
+              }
+            } catch (e) {
+              print('Ziyaret kaydı oluşturulurken hata: $e');
+              // Hata durumunda da detay sayfasına git
+              if (context.mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => NoteDetailScreen(
+                      note: note,
+                      searchTerm: searchTerm,
+                    ),
+                  ),
+                );
               }
             }
           }

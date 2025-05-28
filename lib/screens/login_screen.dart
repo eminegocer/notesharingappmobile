@@ -4,6 +4,8 @@ import '../services/token_service.dart'; // Token işlemleri için servis
 import '../config/api_config.dart'; // API ayarları (muhtemelen URL gibi)
 import 'package:google_fonts/google_fonts.dart'; // Özel fontlar için paket
 import './home_screen.dart'; // Giriş başarılı olunca yönlendireceğimiz ekran
+import './category_screen.dart'; // Kategori ekranına yönlendireceğimiz ekran
+import './register_screen.dart'; // Kayıt ekranına yönlendireceğimiz ekran
 
 // Login ekranını temsil eden ekranın durumu değişebileceği için StatefulWidget 
 class LoginScreen extends StatefulWidget {
@@ -114,11 +116,11 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           await _tokenService.saveToken(response['token']);
         }
 
-        // Başarılı giriş sonrası ana ekrana yönlendirme
+        // Başarılı giriş sonrası kategori ekranına yönlendirme
         if (mounted) {
           Navigator.pushAndRemoveUntil(
             context,
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            MaterialPageRoute(builder: (context) => const CategoryScreen()),
             (route) => false, // Önceki ekranları temizle
           );
         }
@@ -349,7 +351,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               // Kayıt Ol Butonu
                               TextButton(
                                 onPressed: () {
-                                  // TODO: Kayıt ekranına yönlendirme yapılacak
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (context) => const RegisterScreen()),
+                                  );
                                 },
                                 child: Text(
                                   'Hesabınız yok mu? Hemen Kayıt Olun',

@@ -73,9 +73,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
-        title: const Text('Profili Düzenle'),
-        backgroundColor: Colors.green,
+        title: const Text('Profili Düzenle', style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: const Color(0xFF6B7FD7),
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
@@ -83,44 +86,98 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           key: _formKey,
           child: ListView(
             children: [
-              TextFormField(
+              const SizedBox(height: 12),
+              _buildModernInput(
                 controller: _bioController,
-                decoration: const InputDecoration(labelText: 'Biyografi'),
+                label: 'Biyografi',
+                icon: Icons.person_outline,
                 maxLines: 2,
               ),
-              TextFormField(
+              const SizedBox(height: 18),
+              _buildModernInput(
                 controller: _schoolController,
-                decoration: const InputDecoration(labelText: 'Okul'),
+                label: 'Okul',
+                icon: Icons.school_outlined,
               ),
-              TextFormField(
+              const SizedBox(height: 18),
+              _buildModernInput(
                 controller: _departmentController,
-                decoration: const InputDecoration(labelText: 'Bölüm'),
+                label: 'Bölüm',
+                icon: Icons.apartment_outlined,
               ),
-              TextFormField(
+              const SizedBox(height: 18),
+              _buildModernInput(
                 controller: _yearController,
-                decoration: const InputDecoration(labelText: 'Sınıf'),
+                label: 'Sınıf',
+                icon: Icons.grade_outlined,
                 keyboardType: TextInputType.number,
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
               ElevatedButton.icon(
                 onPressed: _isLoading ? null : _saveProfile,
-                icon: const Icon(Icons.save),
-                label: _isLoading
+                icon: _isLoading
                     ? const SizedBox(
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
-                    : const Text('Kaydet'),
+                    : const Icon(Icons.save, color: Colors.white),
+                label: Text(
+                  _isLoading ? 'Kaydediliyor...' : 'Kaydet',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
+                ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  backgroundColor: const Color(0xFF6B7FD7),
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 4,
+                  shadowColor: const Color(0xFF6B7FD7).withOpacity(0.2),
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernInput({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    int maxLines = 1,
+    TextInputType? keyboardType,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextFormField(
+        controller: controller,
+        maxLines: maxLines,
+        keyboardType: keyboardType,
+        style: const TextStyle(fontSize: 16, color: Color(0xFF222222)),
+        decoration: InputDecoration(
+          prefixIcon: Icon(icon, color: const Color(0xFF6B7FD7)),
+          labelText: label,
+          labelStyle: const TextStyle(color: Color(0xFF6B7FD7), fontWeight: FontWeight.w600, fontSize: 15),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+          floatingLabelBehavior: FloatingLabelBehavior.always,
+          alignLabelWithHint: true,
         ),
       ),
     );

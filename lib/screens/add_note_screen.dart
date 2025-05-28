@@ -47,8 +47,8 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
       }
 
       print('Token alındı, kategoriler getiriliyor...');
-      final categories = await _apiService.getNoteCategories(token);
-      print('Kategoriler başarıyla alındı: ${categories.length} adet');
+      final categories = await _apiService.getCategories(token);
+      print('Kategoriler başarıyla alındı: \\${categories.length} adet');
 
       if (mounted) {
         setState(() {
@@ -63,7 +63,6 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
           _errorMessage = 'Kategoriler yüklenirken hata oluştu: $e';
           _isCategoriesLoading = false;
         });
-        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_errorMessage!),

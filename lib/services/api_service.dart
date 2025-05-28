@@ -6,11 +6,20 @@ import '../config/api_config.dart';
 import '../models/note.dart';
 import '../models/chat.dart';
 import '../services/token_service.dart';
+import '../models/user.dart';
 
 class ApiService {
   final client = http.Client();
   final TokenService _tokenService = TokenService();
   String? _currentUsername;
+
+  // HTTP GET yardımcı metodu
+  Future<http.Response> _get(String url, String token) async {
+    return await http.get(
+      Uri.parse(url),
+      headers: ApiConfig.getHeaders(token),
+    );
+  }
 
   // Hata işleme yardımcı metodu
   dynamic _handleResponse(http.Response response) {
@@ -156,27 +165,10 @@ class ApiService {
 
   // Mevcut kullanıcı bilgilerini getirme
   Future<Map<String, dynamic>> getCurrentUser(String token) async {
-    try {
-      final url = '${ApiConfig.baseUrl}/api/user/current';
-      final headers = ApiConfig.getHeaders(token);
-      print('Kullanılan url: $url');
-      print('Kullanılan token: $token');
-      print('Headers: $headers');
-      final response = await http.get(
-        Uri.parse(url),
-        headers: headers,
-      );
-
-      print('getCurrentUser status: ${response.statusCode}');
-      print('getCurrentUser body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      } else {
-        throw Exception('Failed to get current user');
-      }
-    } catch (e) {
-      print('Error getting current user: $e');
+    final response = await _get('${ApiConfig.baseUrl}/api/chat/current', token);
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
       throw Exception('Failed to get current user');
     }
   }
@@ -209,47 +201,22 @@ class ApiService {
   }
 
   // Not kategorilerini getirme
-  Future<List<String>> getNoteCategories(String token) async {
+  Future<List<String>> getCategories(String token) async {
     try {
-      print('Kategoriler yükleniyor...');
-      print('Token: $token');
-      print('URL: ${ApiConfig.baseUrl}${ApiConfig.categories}');
-
       final response = await http.get(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.categories}'),
         headers: ApiConfig.getHeaders(token),
       );
 
-      print('Kategoriler yanıtı alındı. Status: ${response.statusCode}');
-      print('Yanıt body: ${response.body}');
-
-      if (response.statusCode == ApiConfig.statusOk) {
-        try {
-          final List<dynamic> jsonData = jsonDecode(response.body);
-          print('Parse edilen kategori sayısı: ${jsonData.length}');
-          
-          // Kategorileri String listesine dönüştür ve boş olanları filtrele
-          final categories = jsonData
-              .where((category) => category != null && category.toString().isNotEmpty)
-              .map((category) => category.toString())
-              .toList();
-
-          print('Dönüştürülen kategori sayısı: ${categories.length}');
-          return categories;
-        } catch (e) {
-          print('JSON parse hatası: $e');
-          throw Exception('Kategoriler parse edilirken hata oluştu: $e');
-        }
-      } else if (response.statusCode == ApiConfig.statusUnauthorized) {
-        print('Yetkisiz erişim hatası');
-        throw Exception('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        // Backend ["Matematik", "Fizik"] gibi bir liste döndürüyor
+        return List<String>.from(data);
       } else {
-        print('API yanıt hatası. Status: ${response.statusCode}, Body: ${response.body}');
-        throw Exception('Kategoriler yüklenirken hata oluştu. Status: ${response.statusCode}');
+        throw Exception('Kategoriler alınamadı: ${response.statusCode}');
       }
     } catch (e) {
-      print('Kategoriler yüklenirken hata: $e');
-      throw Exception('${ApiConfig.networkError}: $e');
+      throw Exception('Kategoriler alınırken hata oluştu: $e');
     }
   }
 
@@ -621,25 +588,30 @@ class ApiService {
   Future<List<Note>> searchNotes(String token, String searchTerm) async {
     // Eğer arama terimi boşsa, tüm notları getir (veya boş liste döndür)
     if (searchTerm.trim().isEmpty) {
-      // return getNotes(token); // İsteğe bağlı: boş arama tüm notları getirebilir
-      return []; // Veya boş arama boş sonuç döndürsün
+      return []; // Boş arama boş sonuç döndürsün
     }
 
-    final uri = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.searchNotes}')
-        .replace(queryParameters: {'term': searchTerm}); // Sorgu parametresini ekle
-
     try {
+      final uri = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.searchNotes}')
+          .replace(queryParameters: {'term': searchTerm.trim()}); // Sorgu parametresini ekle ve trim et
+
       print('Notlar API\'den aranıyor: $uri');
       print('Kullanılan Token: $token');
 
       final response = await http.get(
         uri,
-        headers: ApiConfig.getHeaders(token), // Arama için token gerekli
+        headers: ApiConfig.getHeaders(token),
       );
 
       print('Arama yanıtı alındı. Status: ${response.statusCode}');
+      print('Arama yanıtı: ${response.body}');
 
       if (response.statusCode == ApiConfig.statusOk) {
+        if (response.body.isEmpty) {
+          print('Arama yanıtı boş');
+          return [];
+        }
+
         final List<dynamic> jsonData = jsonDecode(response.body);
         print('Arama sonucu bulunan not sayısı: ${jsonData.length}');
 
@@ -661,42 +633,53 @@ class ApiService {
       }
     } catch (e) {
       print('Not arama sırasında hata: $e');
-      // Hata durumunda boş liste döndür
-      return [];
+      throw Exception('Not araması sırasında bir hata oluştu: $e');
     }
   }
 
   // Mesaj gönderme
-  Future<Map<String, dynamic>> sendMessage(String token, String targetUsername, String message) async {
-    try {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/api/chat/send-message'),
-        headers: ApiConfig.getHeaders(token),
-        body: jsonEncode({
-          'targetUsername': targetUsername,
-          'content': message,
-        }),
-      );
-      return _handleResponse(response);
-    } catch (e) {
-      throw Exception('${ApiConfig.networkError}: $e');
+  Future<Map<String, dynamic>> sendMessage(
+    String token,
+    String targetUsername,
+    String message, {
+    String? fileUrl,
+  }) async {
+    final body = {
+      'targetUsername': targetUsername,
+      'content': message,
+    };
+    if (fileUrl != null && fileUrl.isNotEmpty) {
+      body['fileUrl'] = fileUrl;
     }
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/api/chat/send-message'),
+      headers: ApiConfig.getHeaders(token),
+      body: jsonEncode(body),
+    );
+    return _handleResponse(response);
   }
 
   // Grup mesajı gönderme
-  Future<Map<String, dynamic>> sendGroupMessage(String token, String groupId, String message, String senderUsername) async {
-  final response = await http.post(
-    Uri.parse('${ApiConfig.baseUrl}${ApiConfig.sendGroupMessage}'),
-    headers: ApiConfig.getHeaders(token),
-    body: jsonEncode({
+  Future<Map<String, dynamic>> sendGroupMessage(
+    String token,
+    String groupId,
+    String message,
+    String senderUsername, {
+    String? fileUrl,
+  }) async {
+    final body = {
       'GroupId': groupId,
       'Content': message,
       'SenderUsername': senderUsername,
-      'FileUrl': '', // Dosya yoksa boş string gönder
-    }),
-  );
-  return _handleResponse(response);
-} 
+      'FileUrl': fileUrl ?? '',
+    };
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}${ApiConfig.sendGroupMessage}'),
+      headers: ApiConfig.getHeaders(token),
+      body: jsonEncode(body),
+    );
+    return _handleResponse(response);
+  }
 
   // Okul gruplarını arama
   Future<List<Map<String, dynamic>>> searchGroups(String token, String searchTerm) async {
@@ -846,6 +829,159 @@ class ApiService {
     } catch (e) {
       print('Özetleme sırasında hata: $e');
       throw Exception('${ApiConfig.networkError}: Özetleme sırasında hata oluştu.');
+    }
+  }
+
+  Future<List<VisitedNote>> getVisitedNotes(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/notes/visited'),
+        headers: ApiConfig.getHeaders(token),
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((e) => VisitedNote.fromJson(e)).toList();
+      } else {
+        throw Exception('Son ziyaret edilen notlar alınamadı');
+      }
+    } catch (e) {
+      print('Son ziyaret edilen notlar alınırken hata: $e');
+      return [];
+    }
+  }
+
+  // En çok indirilen notları getirme
+  Future<List<Note>> getTopDownloadedNotes(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.topDownloaded}'),
+        headers: ApiConfig.getHeaders(token),
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((e) => Note.fromJson(e)).toList();
+      } else {
+        throw Exception('En çok indirilen notlar alınamadı');
+      }
+    } catch (e) {
+      throw Exception('En çok indirilen notlar alınırken hata oluştu: $e');
+    }
+  }
+
+  // Notun son görüntülenme zamanını güncelleyen endpoint
+  Future<void> trackNoteView(String token, String noteId) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/notes/view');
+    final response = await http.post(
+      url,
+      headers: ApiConfig.getHeaders(token),
+      body: '"$noteId"', // JSON string olarak gönder
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Son görüntüleme güncellenemedi: ${response.body}');
+    }
+  }
+
+  // Kategoriye göre notları getirme
+  Future<List<Note>> getNotesByCategory(String token, String category) async {
+    try {
+      print('Kategoriye göre notlar yükleniyor...');
+      print('Kategori: $category');
+      // URL'deki özel karakterleri encode et
+      final encodedCategory = Uri.encodeComponent(category);
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.notes}/category/$encodedCategory'),
+        headers: ApiConfig.getHeaders(token),
+      );
+      print('Kategori notları yanıtı alındı. Status: ${response.statusCode}');
+      print('Yanıt body: ${response.body}');
+      if (response.statusCode == ApiConfig.statusOk) {
+        final List<dynamic> jsonData = jsonDecode(response.body);
+        print('Kategori notları sayısı: ${jsonData.length}');
+        for (var noteJson in jsonData) {
+          print('Kategori not JSON: ' + noteJson.toString());
+        }
+        List<Note> notes = jsonData.map((noteJson) {
+          try {
+            return Note.fromJson(noteJson as Map<String, dynamic>);
+          } catch (e) {
+            print('Not parse edilirken hata: $noteJson, Hata: $e');
+            return null;
+          }
+        }).where((note) => note != null)
+          .cast<Note>()
+          .toList();
+        return notes;
+      } else {
+        print('Kategori notları yüklenemedi. Status: ${response.statusCode}, Body: ${response.body}');
+        throw Exception('Kategori notları yüklenirken hata oluştu. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Kategori notları yüklenirken bir hata oluştu: $e');
+      return [];
+    }
+  }
+
+  // Yeni test sorusu çekme
+  Future<List<dynamic>> generateTestQuestions(String token) async {
+    try {
+      print('Test soruları yükleniyor...');
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.generateTestQuestions}'),
+        headers: ApiConfig.getHeaders(token),
+      );
+      print('Test soruları yanıtı alındı. Status: ${response.statusCode}');
+      print('Yanıt body: ${response.body}');
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return data['data']; // List<CategoryQuestion>
+      } else {
+        throw Exception(data['error'] ?? 'Test soruları alınamadı. Status: ${response.statusCode}, Body: ${response.body}');
+      }
+    } catch (e) {
+      print('Test soruları yüklenirken hata: $e');
+      throw Exception('Test soruları yüklenirken bir hata oluştu: $e');
+    }
+  }
+
+  // Yeni test sonucu gönderme
+  Future<Map<String, dynamic>> submitTest(String token, List<Map<String, dynamic>> answers) async {
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}${ApiConfig.submitTest}'),
+      headers: ApiConfig.getHeaders(token),
+      body: jsonEncode(answers),
+    );
+    final data = jsonDecode(response.body);
+    if (response.statusCode == 200 && data['success'] == true) {
+      return data['data']; // {categoryStats: [...], recommendedNotes: [...]}
+    } else {
+      throw Exception(data['error'] ?? 'Test sonucu gönderilemedi');
+    }
+  }
+
+  // Not indirme işlemini backend'e bildirir
+  Future<bool> trackNoteDownload(String token, String noteId, {String source = 'note_detail'}) async {
+    try {
+      print('Gönderilen NoteId: $noteId');
+      print('KULLANILAN TOKEN: $token');
+      print('KULLANILAN HEADER: ${ApiConfig.getHeaders(token)}');
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.trackDownload}'),
+        headers: ApiConfig.getHeaders(token),
+        body: jsonEncode({
+          'NoteId': noteId,   // Büyük harfli anahtarlar
+          'Source': source,
+        }),
+      );
+      print('YANIT: ${response.statusCode} - ${response.body}');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      } else {
+        return false;
+      }
+    } catch (e) {
+      print('trackNoteDownload HATASI: ${e.toString()}');
+      return false;
     }
   }
 }

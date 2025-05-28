@@ -12,10 +12,17 @@ class ApiConfig {
   static const String notes = '/api/notes';
   static const String myNotes = '/api/notes/my';
   static const String categories = '/api/notes/categories';
-  static const String addNote = '/api/notes';
+  static const String addNote = '/api/notes/';
   static const String getNoteById = '/api/notes/';
   static const String deleteNote = '/api/notes/';
   static const String searchNotes = '/api/notes/search';
+  static const String topDownloaded = '/api/notes/top-downloaded';
+  static const String visitednotes = '/api/notes/"recently-viewed';
+  static const String viewNote = '/api/notes/view';
+  
+  // Note Download endpoints
+  static const String trackDownload = '/api/NoteDownloadApi/track-download';
+  static const String downloadedNotes = '/api/NoteDownloadApi/downloaded-notes';
   
   // Chat endpoints
   static const String addChat = '/api/chat/add-chat';
@@ -61,6 +68,11 @@ class ApiConfig {
   static const String uploadSuccess = 'Dosya yükleme başarılı.';
   static const String deleteSuccess = 'Silme işlemi başarılı.';
   
+
+  // New endpoints
+  static const String generateTestQuestions = '/api/CategoryTest/generate-questions';
+  static const String submitTest = '/api/CategoryTest/submit-test';
+
   // Request headers
   static Map<String, String> getHeaders([String? token]) {
     final headers = {
@@ -96,4 +108,5 @@ class ApiConfig {
   static const String dataKey = 'data';
   static const String errorKey = 'error';
   static const String tokenKey = 'token';
-} 
+
+  } 

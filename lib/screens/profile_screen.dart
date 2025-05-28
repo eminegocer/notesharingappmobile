@@ -4,6 +4,8 @@ import '../services/api_service.dart';
 import './edit_profile_screen.dart';
 import './note_detail_screen.dart';
 import '../models/note.dart';
+import '../services/token_service.dart';
+import './login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String token;
@@ -57,6 +59,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onPressed: () => Navigator.pop(context),
               )
             : null,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.white),
+            tooltip: 'Çıkış Yap',
+            onPressed: () async {
+              await TokenService().deleteToken();
+              if (context.mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                  (route) => false,
+                );
+              }
+            },
+          ),
+        ],
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
